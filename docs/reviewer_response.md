@@ -783,6 +783,7 @@ evaluation:
 | Weight decay | 5 × 10⁻⁴ |
 | Batch size | 64 |
 | Max epochs / early-stopping patience | 35 / 8 |
+| **Checkpoint selection metric** | **Speaker-balanced macro-F1** on the checkpoint partition, weighting each utterance by `1 / n(speaker)` |
 | Gradient clipping | 5.0 (global norm) |
 | Dropout / label smoothing | 0.30 / 0.05 |
 | Class balancing | Inverse-frequency `WeightedRandomSampler`, with replacement (R1.8) |
@@ -792,7 +793,19 @@ evaluation:
 
 Checkpoint selection, temperature fitting, and policy selection use **disjoint** validation
 subsets (50% / 25% / 25%, partitioned deterministically by hashed sample ID), so the checkpoint
-is not chosen on the same rows used to calibrate or to select θ and ε. Seeds, configuration
+is not chosen on the same rows used to calibrate or to select θ and ε.
+
+We report one further correction that the reviewers' concern about speaker imbalance led us to.
+Selecting checkpoints on pooled validation NLL proved unusable on this corpus, because each
+fold's validation partition is **38–77% a single speaker** (folds 2 and 3 contain only *two*
+validation speakers). Pooled NLL therefore largely measures one speaker: it swung by a factor of
+two between consecutive epochs, and in one fold it never improved on the epoch-0 value, so early
+stopping preserved an effectively untrained checkpoint while training loss fell steadily.
+Checkpoints are now selected on **speaker-balanced macro-F1**, in which every utterance is
+weighted by `1 / n(speaker)`. This was decided from training and validation curves alone, with no
+test data involved. It is worth stating plainly that speaker imbalance in this corpus degrades
+**model selection**, not merely the reporting of results — a stronger version of the point made
+in R1.7, R1.18, and R2.11. Seeds, configuration
 hashes, environment manifest, and the Git commit are recorded in every run summary.
 
 **One reproducibility caveat we disclose rather than omit:** the primary runs execute on an Apple

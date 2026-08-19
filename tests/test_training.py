@@ -199,3 +199,51 @@ def test_device_selection_has_explicit_cpu_and_rejects_unknown() -> None:
     assert select_device("cpu") == torch.device("cpu")
     with pytest.raises(ValueError, match="Unsupported"):
         select_device("gpu")  # type: ignore[arg-type]
+
+
+def test_speaker_balanced_macro_f1_equalises_speaker_influence() -> None:
+    from timeentropy.training.engine import speaker_balanced_macro_f1
+
+    # One dominant speaker classified perfectly, one small speaker classified wrongly.
+    labels = [0] * 100 + [1] * 4
+    predictions = [0] * 100 + [0] * 4
+    speakers = ["DOM"] * 100 + ["SMALL"] * 4
+
+    balanced = speaker_balanced_macro_f1(labels, predictions, speakers)
+    # Weighted control F1 is 2/3 (TP 1.0, FP 1.0) and dysarthric F1 is 0, since every
+    # dysarthric utterance is missed. The macro average is therefore 1/3, however large
+    # the correctly-classified speaker grows.
+    assert balanced == pytest.approx(1 / 3)
+
+    # Perfect predictions score 1.0 regardless of speaker imbalance.
+    assert speaker_balanced_macro_f1(labels, labels, speakers) == pytest.approx(1.0)
+
+
+def test_speaker_balanced_macro_f1_is_insensitive_to_one_speakers_size() -> None:
+    from timeentropy.training.engine import speaker_balanced_macro_f1
+
+    def score(dominant: int) -> float:
+        labels = [0] * dominant + [1] * 10
+        predictions = [0] * dominant + [1] * 5 + [0] * 5
+        speakers = ["DOM"] * dominant + ["OTHER"] * 10
+        return speaker_balanced_macro_f1(labels, predictions, speakers)
+
+    # Growing the dominant speaker 10x must not move the balanced statistic.
+    assert score(50) == pytest.approx(score(500))
+
+
+def test_speaker_balanced_macro_f1_validates_input() -> None:
+    from timeentropy.training.engine import speaker_balanced_macro_f1
+
+    with pytest.raises(ValueError, match="equal length"):
+        speaker_balanced_macro_f1([0, 1], [0], ["A", "B"])
+    with pytest.raises(ValueError, match="empty"):
+        speaker_balanced_macro_f1([], [], [])
+
+
+def test_training_config_rejects_unknown_selection_metric() -> None:
+    from timeentropy.training.engine import TrainingConfig
+
+    with pytest.raises(ValueError, match="selection_metric"):
+        TrainingConfig(selection_metric="accuracy")
+    assert TrainingConfig().selection_metric == "speaker_balanced_macro_f1"

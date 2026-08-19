@@ -3,7 +3,8 @@ from __future__ import annotations
 import inspect
 import os
 import random
-from collections.abc import Mapping
+from collections import Counter
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -18,6 +19,7 @@ from torch.utils.data import DataLoader
 from timeentropy.provenance import sha256_json
 
 DevicePreference = Literal["auto", "cpu", "mps"]
+SelectionMetric = Literal["speaker_balanced_macro_f1", "pooled_nll"]
 
 
 @dataclass(frozen=True)
@@ -29,6 +31,7 @@ class TrainingConfig:
     max_epochs: int = 35
     early_stopping_patience: int = 8
     minimum_improvement: float = 0.0
+    selection_metric: SelectionMetric = "speaker_balanced_macro_f1"
 
     def __post_init__(self) -> None:
         if self.learning_rate <= 0.0:
@@ -43,6 +46,8 @@ class TrainingConfig:
             raise ValueError("epoch and patience counts must be positive")
         if self.minimum_improvement < 0.0:
             raise ValueError("minimum_improvement must be non-negative")
+        if self.selection_metric not in ("speaker_balanced_macro_f1", "pooled_nll"):
+            raise ValueError(f"Unsupported selection_metric: {self.selection_metric}")
 
 
 @dataclass(frozen=True)
@@ -52,6 +57,7 @@ class EpochRecord:
     train_control_draws: int
     train_dysarthric_draws: int
     checkpoint_nll: float
+    checkpoint_speaker_balanced_macro_f1: float
     maximum_gradient_norm: float
     improved: bool
 
@@ -61,6 +67,8 @@ class TrainingResult:
     history: tuple[EpochRecord, ...]
     best_epoch: int
     best_checkpoint_nll: float
+    best_checkpoint_speaker_balanced_macro_f1: float
+    selection_metric: SelectionMetric
     epochs_completed: int
     stopped_early: bool
     checkpoint_path: Path
@@ -220,6 +228,77 @@ def move_batch_to_device(batch: Mapping[str, Any], device: torch.device) -> dict
     }
 
 
+def speaker_balanced_macro_f1(
+    labels: Sequence[int],
+    predictions: Sequence[int],
+    speakers: Sequence[str],
+) -> float:
+    """Macro-F1 in which every speaker contributes equal total weight.
+
+    Each TORGO speaker is entirely control or entirely dysarthric, so a per-speaker F1 is
+    undefined. Instead every utterance is weighted by ``1 / n(speaker)``, which prevents a
+    single speaker from dominating the statistic. With validation partitions that are
+    38-77% one speaker, an unweighted metric mostly measures that speaker.
+    """
+
+    if not (len(labels) == len(predictions) == len(speakers)):
+        raise ValueError("labels, predictions, and speakers must have equal length")
+    if not labels:
+        raise ValueError("Checkpoint validation loader is empty")
+    counts = Counter(speakers)
+    weights = [1.0 / counts[speaker] for speaker in speakers]
+
+    scores = []
+    for target in (0, 1):
+        true_positive = sum(
+            weight
+            for weight, label, prediction in zip(weights, labels, predictions, strict=True)
+            if label == target and prediction == target
+        )
+        false_positive = sum(
+            weight
+            for weight, label, prediction in zip(weights, labels, predictions, strict=True)
+            if label != target and prediction == target
+        )
+        false_negative = sum(
+            weight
+            for weight, label, prediction in zip(weights, labels, predictions, strict=True)
+            if label == target and prediction != target
+        )
+        denominator = 2.0 * true_positive + false_positive + false_negative
+        scores.append(0.0 if denominator == 0.0 else 2.0 * true_positive / denominator)
+    return sum(scores) / len(scores)
+
+
+def evaluate_checkpoint_metrics(
+    model: nn.Module,
+    loader: DataLoader,
+    device: torch.device,
+) -> tuple[float, float]:
+    """Return unsmoothed mean NLL and speaker-balanced macro-F1 over checkpoint data."""
+
+    model.eval()
+    total_loss = 0.0
+    total_items = 0
+    labels: list[int] = []
+    predictions: list[int] = []
+    speakers: list[str] = []
+    with torch.inference_mode():
+        for raw_batch in loader:
+            batch = move_batch_to_device(raw_batch, device)
+            logits = call_model_for_batch(model, batch)
+            batch_labels = batch["label_id"]
+            loss = F.cross_entropy(logits, batch_labels, reduction="sum")
+            total_loss += float(loss.detach().cpu())
+            total_items += int(batch_labels.shape[0])
+            labels.extend(int(value) for value in batch_labels.detach().cpu())
+            predictions.extend(int(value) for value in logits.argmax(dim=-1).detach().cpu())
+            speakers.extend(str(value) for value in raw_batch["speaker_id"])
+    if total_items == 0:
+        raise ValueError("Checkpoint validation loader is empty")
+    return total_loss / total_items, speaker_balanced_macro_f1(labels, predictions, speakers)
+
+
 def evaluate_nll(
     model: nn.Module,
     loader: DataLoader,
@@ -227,20 +306,7 @@ def evaluate_nll(
 ) -> float:
     """Compute unsmoothed mean negative log likelihood over checkpoint data."""
 
-    model.eval()
-    total_loss = 0.0
-    total_items = 0
-    with torch.inference_mode():
-        for raw_batch in loader:
-            batch = move_batch_to_device(raw_batch, device)
-            logits = call_model_for_batch(model, batch)
-            labels = batch["label_id"]
-            loss = F.cross_entropy(logits, labels, reduction="sum")
-            total_loss += float(loss.detach().cpu())
-            total_items += int(labels.shape[0])
-    if total_items == 0:
-        raise ValueError("Checkpoint validation loader is empty")
-    return total_loss / total_items
+    return evaluate_checkpoint_metrics(model, loader, device)[0]
 
 
 def _to_cpu(value: Any) -> Any:
@@ -314,6 +380,7 @@ def train_with_early_stopping(
     resolved_checkpoint = Path(checkpoint_path)
     history: list[EpochRecord] = []
     best_nll = float("inf")
+    best_macro_f1 = float("-inf")
     best_epoch = -1
     epochs_without_improvement = 0
     stopped_early = False
@@ -357,10 +424,16 @@ def train_with_early_stopping(
         if total_items == 0:
             raise ValueError("Training loader is empty")
 
-        checkpoint_nll = evaluate_nll(model, checkpoint_loader, device)
-        improved = checkpoint_nll < best_nll - config.minimum_improvement
+        checkpoint_nll, checkpoint_macro_f1 = evaluate_checkpoint_metrics(
+            model, checkpoint_loader, device
+        )
+        if config.selection_metric == "speaker_balanced_macro_f1":
+            improved = checkpoint_macro_f1 > best_macro_f1 + config.minimum_improvement
+        else:
+            improved = checkpoint_nll < best_nll - config.minimum_improvement
         if improved:
             best_nll = checkpoint_nll
+            best_macro_f1 = checkpoint_macro_f1
             best_epoch = epoch
             epochs_without_improvement = 0
             _save_checkpoint(
@@ -383,6 +456,7 @@ def train_with_early_stopping(
                 train_control_draws=int(sampled_class_counts[0]),
                 train_dysarthric_draws=int(sampled_class_counts[1]),
                 checkpoint_nll=checkpoint_nll,
+                checkpoint_speaker_balanced_macro_f1=checkpoint_macro_f1,
                 maximum_gradient_norm=maximum_gradient_norm,
                 improved=improved,
             )
@@ -399,6 +473,8 @@ def train_with_early_stopping(
         history=tuple(history),
         best_epoch=best_epoch,
         best_checkpoint_nll=best_nll,
+        best_checkpoint_speaker_balanced_macro_f1=best_macro_f1,
+        selection_metric=config.selection_metric,
         epochs_completed=len(history),
         stopped_early=stopped_early,
         checkpoint_path=resolved_checkpoint,

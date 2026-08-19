@@ -92,6 +92,12 @@ training:
   batch_size: 64
   max_epochs: 35
   early_stopping_patience: 8
+  # Checkpoints are selected on speaker-balanced macro-F1 rather than pooled NLL.
+  # Validation partitions are 38-77% a single speaker, so pooled NLL mostly measures that
+  # speaker and swings by 2x between consecutive epochs; under it, fold 1 selected its
+  # epoch-0 checkpoint because validation NLL never improved. Decided on training and
+  # validation curves only; no test data was involved.
+  checkpoint_selection_metric: "speaker_balanced_macro_f1"
   gradient_clip_norm: 5.0
   dropout: 0.30
   label_smoothing: 0.05

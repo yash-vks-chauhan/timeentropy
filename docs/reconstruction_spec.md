@@ -61,6 +61,12 @@ reproduced results. The rebuild must regenerate every result from raw audio.
   within 0.01 absolute of that fold's fixed-300-ms validation macro-F1.
 - The validation speakers are deterministically partitioned by hashed sample ID into
   checkpoint-stopping (50%), calibration (25%), and policy-tuning (25%) subsets.
+- Checkpoints are selected on **speaker-balanced macro-F1**, not pooled validation NLL. Each
+  fold's validation partition is 38-77% a single speaker, so pooled NLL largely measures that
+  speaker: it swung by a factor of two between consecutive epochs, and in one fold never
+  improved on the epoch-0 value, so early stopping preserved an untrained checkpoint while
+  training loss fell steadily. Every utterance is weighted by `1 / n(speaker)` before the
+  macro-F1 is computed. The change was decided on training and validation curves alone.
 - The Transformer is the prospectively designated headline architecture; test performance is
   not used to choose the headline model or random seed.
 - Test results are inspected only after configuration freezing and validation selection.
