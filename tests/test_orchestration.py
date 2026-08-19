@@ -101,10 +101,20 @@ def test_dependency_errors_reports_unsatisfied_prerequisites(matrix) -> None:
 
 
 def test_completion_states_distinguish_pending_from_partial(matrix, tmp_path) -> None:
-    job = select_jobs(matrix, stages=["primary_stft"], folds=[0])[0]
+    # Both cases are relocated under tmp_path: asserting against artifacts/runs would
+    # make the result depend on whether a real run happens to be in flight.
+    selected = select_jobs(matrix, stages=["primary_stft"], folds=[0])[0]
+    empty = tmp_path / "empty" / selected.run_id
+    job = replace(
+        selected,
+        output_directory=empty,
+        summary_path=empty / "run_summary.json",
+        ledger_path=empty / "prefix_predictions.parquet",
+        checkpoint_path=empty / "best_checkpoint.pt",
+    )
     assert verify_job_completion(job).state == "pending"
 
-    output = tmp_path / job.run_id
+    output = tmp_path / "partial" / job.run_id
     output.mkdir(parents=True)
     (output / "prefix_predictions.parquet").write_bytes(b"partial")
     partial = replace(
