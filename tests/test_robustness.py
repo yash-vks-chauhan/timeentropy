@@ -39,6 +39,16 @@ from timeentropy.robustness.test_time import (
 )
 from timeentropy.signal.onset import OnsetConfig
 
+# Derived from the frozen protocol so that changing the primary onset mode does not
+# silently invalidate these fixtures.
+_PRIMARY = next(
+    item
+    for item in load_robustness_protocol("configs/robustness_v1.yaml").retrained_analyses
+    if item.role == "primary"
+)
+PRIMARY_ANALYSIS_ID = _PRIMARY.analysis_id
+PRIMARY_ONSET_MODE = _PRIMARY.onset_mode
+
 
 def _read_table(path: Path) -> pd.DataFrame:
     return pd.read_csv(path) if path.suffix == ".csv" else pd.read_parquet(path)
@@ -71,7 +81,7 @@ def _reference_ledger(run_id: str = "reference-fold0") -> pd.DataFrame:
                     "seed": 20260819,
                     "model_id": "transformer",
                     "split_role": split_role,
-                    "onset_variant": "causal_fixed",
+                    "onset_variant": PRIMARY_ONSET_MODE,
                     "pre_roll_ms": 30,
                     "prefix_ms": prefix_ms,
                     "label_id": label_id,
@@ -141,20 +151,22 @@ def test_frozen_protocol_separates_training_and_test_time_conditions(tmp_path) -
     assert len(protocol.plan_rows()) == 75
     assert not any(row["test_set_tuning_permitted"] for row in protocol.plan_rows())
 
-    derived = derived_retraining_config(protocol, "causal_fixed_preroll0")
+    ablation = next(
+        item for item in protocol.retrained_analyses if item.role == "pre_roll_ablation"
+    )
+    derived = derived_retraining_config(protocol, ablation.analysis_id)
     assert derived["onset"]["pre_roll_ms"] == 0
-    assert derived["onset"]["primary_mode"] == "causal_fixed"
+    assert derived["onset"]["primary_mode"] == ablation.onset_mode
     assert derived["robustness_retrained_input_ablation"]["requires_condition_matched_checkpoint"]
     with pytest.raises(ValueError, match="must not receive"):
         derived_retraining_config(protocol, "clean_reference")
 
     paths = write_retraining_configs(protocol, tmp_path / "derived")
     assert set(paths) == {
-        "causal_fixed_preroll0",
-        "offline_peak_preroll30",
-        "causal_noise_floor_preroll30",
-        "manifest",
-    }
+        item.analysis_id
+        for item in protocol.retrained_analyses
+        if item.requires_new_training
+    } | {"manifest"}
     assert write_retraining_configs(protocol, tmp_path / "derived") == paths
 
 
@@ -315,7 +327,7 @@ def test_clean_test_time_run_records_zero_test_tuning(tmp_path) -> None:
                 "fold": 0,
                 "seed": 20260819,
                 "model_id": "transformer",
-                "onset_variant": "causal_fixed",
+                "onset_variant": PRIMARY_ONSET_MODE,
             },
             "hashes": {
                 "experiment_config_sha256": protocol.parent_config_sha256,
@@ -386,7 +398,7 @@ def test_perturbed_run_exports_noise_and_zero_shift_audit(tmp_path) -> None:
                 "fold": 0,
                 "seed": 20260819,
                 "model_id": "transformer",
-                "onset_variant": "causal_fixed",
+                "onset_variant": PRIMARY_ONSET_MODE,
             },
             "hashes": {
                 "experiment_config_sha256": protocol.parent_config_sha256,
@@ -458,7 +470,7 @@ def test_retrained_evaluator_verifies_run_and_uses_standard_validation_pipeline(
     )
     result = evaluate_retrained_ablation_ledgers(
         robustness_path,
-        analysis_id="primary_causal_fixed_preroll30",
+        analysis_id=PRIMARY_ANALYSIS_ID,
         prefix_ledger_paths=(ledger_path,),
         run_summary_paths=(run_summary_path,),
         output_directory=tmp_path / "retrained-evaluation",

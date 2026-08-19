@@ -22,9 +22,15 @@ audio:
   mono: true
 
 onset:
-  primary_mode: "causal_fixed"
+  # Revised after the prespecified label-free onset validation (scripts/diagnose_onset_modes.py).
+  # The fixed absolute floor of 0.003 (-50 dBFS) sits below TORGO head-mic room tone
+  # (-22 to -41 dBFS), so causal_fixed fired at sample 0 on 71.7% of utterances and left
+  # 43.3% of nominal onset-aligned prefixes containing room tone rather than speech.
+  # The adaptive causal rule fires at zero on 4.7% and leaves 3.5%. The change was decided
+  # on waveform statistics only: no label, model output, or test metric was used.
+  primary_mode: "causal_noise_floor"
   comparison_mode: "recovered_offline_peak"
-  secondary_mode: "causal_noise_floor"
+  secondary_mode: "causal_fixed"
   frame_ms: 20
   hop_ms: 10
   absolute_rms_floor: 0.003

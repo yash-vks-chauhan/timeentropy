@@ -10,25 +10,25 @@ scope:
   note: "Ablations use the prospectively designated headline model and primary seed only."
 
 retrained_input_ablations:
-  - analysis_id: "primary_causal_fixed_preroll30"
-    onset_mode: "causal_fixed"
+  - analysis_id: "primary_causal_noise_floor_preroll30"
+    onset_mode: "causal_noise_floor"
     pre_roll_ms: 30
     role: "primary"
-  - analysis_id: "causal_fixed_preroll0"
-    onset_mode: "causal_fixed"
+  - analysis_id: "causal_noise_floor_preroll0"
+    onset_mode: "causal_noise_floor"
     pre_roll_ms: 0
     role: "pre_roll_ablation"
   - analysis_id: "offline_peak_preroll30"
     onset_mode: "recovered_offline_peak"
     pre_roll_ms: 30
     role: "noncausal_alignment_comparator"
-  - analysis_id: "causal_noise_floor_preroll30"
-    onset_mode: "causal_noise_floor"
+  - analysis_id: "causal_fixed_preroll30"
+    onset_mode: "causal_fixed"
     pre_roll_ms: 30
-    role: "secondary_causal_detector"
+    role: "fixed_threshold_comparator"
 
 evaluation_only_noise:
-  reference_checkpoint: "primary_causal_fixed_preroll30"
+  reference_checkpoint: "primary_causal_noise_floor_preroll30"
   noise_type: "zero_mean_white_gaussian"
   insertion_stage: "after_onset_crop_before_stft"
   snr_db: [20.0, 10.0, 0.0]
@@ -37,7 +37,7 @@ evaluation_only_noise:
   caveat: "Synthetic white noise is a stress test, not a substitute for real far-field microphones."
 
 evaluation_only_onset_perturbation:
-  reference_checkpoint: "primary_causal_fixed_preroll30"
+  reference_checkpoint: "primary_causal_noise_floor_preroll30"
   offset_ms: [-50, -30, -10, 0, 10, 30, 50]
   sign_convention: "estimated_onset = primary_onset + offset"
   boundary_policy: "clip crop anchor to available waveform; preserve exact crop length by padding"
