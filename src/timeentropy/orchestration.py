@@ -314,7 +314,9 @@ def build_run_matrix(
     output_root: str | Path = "artifacts/runs",
     robustness_output_root: str | Path = "artifacts/robustness",
     derived_config_root: str | Path = "artifacts/orchestration/retraining-configs",
-    python_executable: str = os.fspath(Path(os.sys.executable).resolve()),
+    # Not resolved: under a virtualenv, sys.executable is a symlink into the base
+    # interpreter, and resolving it yields a Python without the project installed.
+    python_executable: str = os.fspath(Path(os.sys.executable)),
     device: str = "auto",
     num_workers: int = 0,
     allow_wavlm_download: bool = False,

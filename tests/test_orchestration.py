@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -169,3 +171,28 @@ def test_plan_record_round_trips_to_disk(matrix, tmp_path) -> None:
     json_path, csv_path = write_plan(record, tmp_path / "plan")
     assert json.loads(Path(json_path).read_text())["matrix_sha256"] == matrix.matrix_sha256
     assert csv_path.is_file()
+
+
+def test_default_interpreter_can_import_the_project(matrix) -> None:
+    """The launcher interpreter must be the running one, symlinks intact.
+
+    Resolving ``sys.executable`` dereferences a virtualenv's symlink into the base
+    interpreter, which has no project install, so every launched job dies with
+    ModuleNotFoundError before writing an artifact.
+    """
+
+    interpreter = matrix.jobs[0].command[0]
+    assert Path(interpreter) == Path(sys.executable)
+
+    completed = subprocess.run(
+        [interpreter, "-c", "import timeentropy"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+
+
+def test_matrix_identity_is_independent_of_the_interpreter(matrix) -> None:
+    other = build_run_matrix(python_executable="/somewhere/else/python")
+    assert other.matrix_sha256 == matrix.matrix_sha256
