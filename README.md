@@ -115,6 +115,14 @@ runtime profiling. Their protocols and interpretation rules are documented in
 
 The placeholder fold directory names in the example must be replaced by the actual run IDs.
 
+## Operating rule: do not commit while a sweep is running
+
+`scripts/run_experiments.py run` captures the Git commit at preflight and stamps it into every
+checkpoint and run summary, then refuses any artifact whose recorded commit differs. Committing
+mid-sweep therefore splits the provenance chain and halts the run, **even when only documentation
+changed** — the guard deliberately does not judge which files are scientifically relevant. Land
+every commit before launching, and leave the worktree untouched until the sweep finishes.
+
 No revised scientific result should be quoted until audio recovery, all frozen fold runs,
 calibration/policy selection, ledger validation, and report generation have completed. Passing
 unit tests establishes implementation invariants; it is not experimental evidence.
