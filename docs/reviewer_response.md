@@ -25,6 +25,14 @@ previously reported values appear below only where a reviewer asked about them d
 Reviewer 1's arithmetic on Figure 6 is correct, and it is the reason we checked. We are grateful
 for it. Our response to R1.20 sets out what we found.
 
+**A second finding, from the onset validation the reviewers requested.** Reviewers 1, 2, and 3 all
+asked us to specify and validate the RMS onset detector (R1.4, R2.4, R3.1). Carrying out that
+validation revealed that our onset detector frequently did not locate speech onset at all. It
+fires on the recording's room tone, so a nominal "onset-aligned 300 ms prefix" can contain no
+speech. This affects the **submitted** manuscript's detector on approximately **45%** of
+utterances. We report it in full at R1.4, because it bears on how the submitted results should be
+interpreted, and because the reviewers would have found it themselves by running the same check.
+
 Two model families named in the submitted manuscript — **CNN-GRU** and **EfficientNet-lite** —
 are withdrawn rather than reconstructed from memory. Our reasoning is given at R2.7/R3.4.
 
@@ -158,17 +166,62 @@ real-time latency claim. The revision makes a causal rule primary:
 
 | Mode | Threshold | Role |
 |---|---|---|
-| `causal_fixed` (**primary**) | fixed absolute RMS floor `0.003` | causal; all headline results |
-| `causal_noise_floor` (secondary) | `max(0.003, median RMS of first 100 ms × 10^(15/20))` | causal; adaptive-noise check |
-| `recovered_offline_peak` (comparator) | `max(0.003, peak_RMS − 35 dB)` | **non-causal**; offline alignment only |
+| `causal_noise_floor` (**primary**) | `max(0.003, median RMS of first 100 ms × 10^(15/20))` | causal and level-adaptive; all headline results |
+| `causal_fixed` (comparator) | fixed absolute RMS floor `0.003` | causal but level-blind; retained to quantify its failure |
+| `recovered_offline_peak` (comparator only) | `max(0.003, peak_RMS − 35 dB)` | **non-causal**; offline-alignment comparator |
 
-**Second, quantitative validation.** We manually annotate a prespecified stratified subset of
-utterances and report **detection-failure rate** and **signed and absolute onset error** against
-those annotations, with speaker-clustered intervals. We then repeat the complete decision policy
-under onset-anchor perturbations of **−50, −30, −10, 0, +10, +30, +50 ms**, so the reviewer can
-see directly how much of the latency claim survives realistic onset error. Utterances where no
-two-frame run reaches threshold are recorded as explicit detector failures with a registered
-fallback anchor and are counted, not silently dropped.
+**Second, quantitative validation — which found a serious defect.** We report this in full
+because it changes how the submitted results should be read.
+
+A label-free diagnostic (600 utterances, 40 per speaker) compares each detector mode using only
+the waveform — no label, no model output, no test metric. It asks whether a mode actually
+localises onset or simply fires on the recording's noise floor:
+
+| Mode | Fires at sample 0 | Median onset | Median post-onset RMS | Prefix is room tone |
+|---|---:|---:|---:|---:|
+| Fixed absolute threshold | 71.7% | 0 ms | 0.0119 | 43.3% |
+| **Adaptive noise-floor (new primary)** | **4.7%** | 1060 ms | **0.1713** | **3.5%** |
+| **Peak-relative (submitted manuscript)** | **45.0%** | 40 ms | 0.0149 | **27.5%** |
+
+The cause is a mismatch of scale. An absolute RMS floor of 0.003 is **−50 dBFS**, while measured
+room tone in these head-mounted recordings sits at **−22 to −41 dBFS** — above the threshold. The
+first analysis frame therefore already exceeds it, the two-frame criterion is satisfied
+immediately, and the detector returns sample 0. For speaker MC04, room tone holds near −41 dBFS
+for about 1.4 s before speech reaches −9 dBFS; every one of the first ten frames clears the
+threshold. The failure is speaker-dependent because it depends on recording level: M05's
+recordings open directly on speech, where an anchor at sample 0 is approximately correct.
+
+**This affects the submitted manuscript.** Its peak-relative detector fires at sample 0 on
+approximately **45%** of utterances, leaving about **27.5%** of nominal onset-aligned prefixes
+containing room tone rather than speech. We cannot quantify the precise effect on the submitted
+numbers, because the original predictions no longer exist — but a classifier trained and
+evaluated on prefixes that are substantially silence is not measuring what the manuscript claimed
+it measured, and we will not defend those numbers.
+
+We observed the downstream consequence directly. A fold trained under the fixed-threshold
+detector scored **77.4–82.2%** across its three validation partitions and **52.9%** on test,
+against a 51.9% majority-class baseline. The per-speaker breakdown gives the mechanism: control
+speaker **MC04** — 650 utterances, 38% of that fold's test set, every onset at sample 0 — was
+classified dysarthric on **100%** of its utterances, while dysarthric speaker M05, whose
+recordings open on speech, scored 99.6%.
+
+**Disposition.** The primary detector is changed to the adaptive causal rule. We note that this
+selects among the **three modes already specified in the frozen configuration**, on a criterion
+computed from waveforms alone, so it is a validation outcome rather than tuning on test results;
+had we run this diagnostic before training, as we should have, the same conclusion would have
+followed with no model involved. The fixed-threshold mode is retained in the robustness matrix as
+a comparator, so the manuscript quantifies the failure instead of merely describing it.
+
+We additionally report the originally planned validation: manual annotation of a prespecified
+stratified subset, with **detection-failure rate** and **signed and absolute onset error** against
+those annotations and speaker-clustered intervals; and the complete decision policy repeated under
+onset-anchor perturbations of **−50, −30, −10, 0, +10, +30, +50 ms**, so the reviewer can see how
+much of the latency claim survives realistic onset error. Utterances where no two-frame run
+reaches threshold are recorded as explicit detector failures with a registered fallback anchor,
+counted rather than silently dropped.
+
+*Reproducible evidence:* `scripts/diagnose_onset_modes.py`; full write-up in
+`docs/onset_finding.md`.
 
 Full detector mathematics are at R2.4. **Onset-error results are pending the frozen reruns.**
 
@@ -215,7 +268,11 @@ confidence intervals (R1.7, R1.18).
 ### R1.7 Only 15 speakers — report fold-wise variation and confidence intervals
 
 **Author response.** Accepted in full. With 15 speakers, a point estimate is not an adequate
-summary, and a single atypical speaker can move an aggregate materially.
+summary, and a single atypical speaker can move an aggregate materially. We can now demonstrate
+this rather than concede it in principle: in one diagnostic fold, control speaker MC04 alone —
+650 utterances, 38% of that fold's test set — was misclassified on **100%** of its utterances and
+pulled the fold from a validation range of 77–82% down to 52.9% on test (R1.4). A design in which
+one speaker can do that requires interval reporting, not point estimates.
 
 The revision reports: all five fold results individually; unweighted fold mean ± sample SD;
 pooled out-of-fold metrics; per-speaker metrics; and **speaker-clustered bootstrap 95% confidence
@@ -412,7 +469,9 @@ mark the boundary honestly than present noise injection as having crossed it.
 
 **Author response.** Accepted, and this is a well-founded concern for this corpus: utterance
 counts per speaker range from **132 (F01)** to **1,108 (MC01)**, an 8.4-fold spread, so a
-pooled metric is disproportionately shaped by a few speakers. The revision reports:
+pooled metric is disproportionately shaped by a few speakers. Our onset investigation produced a
+concrete instance of exactly this failure — a single control speaker accounting for 38% of a
+fold's test set and misclassified throughout (R1.4, R1.7). The revision reports:
 
 - **per-speaker** accuracy, macro-F1, recall, and error counts for all 15 speakers;
 - **per-fold confusion matrices** in addition to the pooled matrix;
@@ -604,6 +663,14 @@ recovered rule `τ = max(0.003, peak_RMS · 10^(−35/20))` uses the peak of the
 and is therefore **non-causal**. It is retained only as an offline-alignment comparator. The
 primary rule is causal and fixed, `τ = 0.003`; a secondary causal rule estimates a noise floor
 from the first 100 ms, `τ = max(0.003, median{r[0..9]} · 10^(15/20))`.
+
+We must also report what applying this formulation revealed. The defect was the threshold scale,
+not the framing or the decision rule: an absolute floor of 0.003 is −50 dBFS, whereas room tone in
+these recordings measures −22 to −41 dBFS, so `r[m] ≥ τ` holds at `m = 0` for most utterances and
+the returned "onset" is really the start of the recording. The submitted manuscript's
+peak-relative rule does this on roughly **45%** of utterances. The primary rule is now the
+adaptive noise-floor form given above, which reduces the fire-at-zero rate to **4.7%**. Full
+figures and disposition at R1.4 and in `docs/onset_finding.md`.
 
 **Onset-error detection:** utterances with no qualifying two-frame run are recorded as explicit
 **detector failures** with a registered fallback anchor at sample 0, counted and reported rather
@@ -804,9 +871,14 @@ real-time detector, which contradicts the paper's minimal-latency claim. In the 
 
 | Mode | Threshold | Role |
 |---|---|---|
-| `causal_fixed` (**primary**) | fixed absolute RMS floor `0.003` | causal; used for all headline results |
-| `causal_noise_floor` (secondary) | `max(0.003, median RMS of first 100 ms × 10^(15/20))` | causal; adaptive-noise sensitivity check |
-| `recovered_offline_peak` (comparator only) | `max(0.003, peak_RMS − 35 dB)` | **non-causal**; retained only as an offline-alignment comparator |
+| `causal_noise_floor` (**primary**) | `max(0.003, median RMS of first 100 ms × 10^(15/20))` | causal and level-adaptive; all headline results |
+| `causal_fixed` (comparator) | fixed absolute RMS floor `0.003` | causal but level-blind; retained to quantify its failure |
+| `recovered_offline_peak` (comparator only) | `max(0.003, peak_RMS − 35 dB)` | **non-causal**; offline-alignment comparator |
+
+The primary mode is the level-adaptive rule rather than the fixed floor because the onset
+validation showed the fixed floor sits *below* these recordings' room tone, firing at sample 0 on
+71.7% of utterances. Reported in full at R1.4; it also affects the submitted manuscript's
+detector, on roughly 45% of utterances.
 
 Utterances in which no two-frame run reaches the threshold are recorded as explicit detector
 failures with a registered fallback anchor at sample 0; they are counted and reported rather
@@ -1081,7 +1153,9 @@ narrative.
 | Standardized accuracy–earliness metrics defined and reported | R1.11, R1-EV.6 | §5.1 |
 | Calibration analysis (NLL, Brier, 15-bin ECE, reliability diagrams) added before the policy result | R1.13, R2.5 | new §5 subsection |
 | Policy-component ablation incl. `max_softmax_confidence` arm | R1.1, R1-EV.5 | new §5 subsection |
-| Complete causal RMS onset formulation; non-causal peak rule demoted to offline comparator; claimed smoothing stage removed | R1.4, R2.4, R3.1 | §3.1 |
+| Complete causal RMS onset formulation; claimed smoothing stage removed | R1.4, R2.4, R3.1 | §3.1 |
+| **Primary onset detector changed to the level-adaptive causal rule** after label-free validation; fixed-threshold and non-causal peak rules retained as comparators | R1.4, R2.4, R3.1 | §3.1, §5 |
+| **Disclosure that the submitted manuscript's detector fires at sample 0 on ~45% of utterances**, leaving ~27.5% of prefixes containing room tone | R1.4, R2.4 | §3.1, §5.4 |
 | Quantitative onset validation and onset-perturbation robustness | R1.4, R1-EV.8 | new §5 subsection |
 | Prefix redefined as *t* ms post-onset plus ≤30 ms already-observed pre-roll; zero-pre-roll ablation | R1.5, R3.2 | §3.1, Eq. 1 |
 | `C = 2` stated; entropy's equivalence to max-softmax confidence acknowledged for the binary case | R1.1, R2.2, R3.7 | §3.2, Eq. 2 |

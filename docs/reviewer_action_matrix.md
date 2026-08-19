@@ -22,7 +22,7 @@ mentioned only to explain why the revision was necessary.
 
 | Reviewer request | Frozen revision action |
 |---|---|
-| RMS onset frame, hop, threshold, and criterion | State 20 ms RMS frames, 10 ms hop, threshold formula, and two-consecutive-frame confirmation. The recovered whole-utterance peak-relative rule is non-causal and is retained only as an offline comparator; a fixed-threshold causal rule is primary. |
+| RMS onset frame, hop, threshold, and criterion | State 20 ms RMS frames, 10 ms hop, threshold formula, and two-consecutive-frame confirmation. The recovered whole-utterance peak-relative rule is non-causal and is retained only as an offline comparator. A level-adaptive causal noise-floor rule is primary: label-free validation showed the fixed-threshold alternative fires at sample 0 on 71.7% of utterances, and the recovered peak-relative rule on 45%, because their thresholds sit below the recordings' room tone. See `docs/onset_finding.md`. |
 | Quantitative onset validation | Manually annotate a prespecified stratified subset, report detection-failure rate and signed/absolute onset error, and repeat the main policy under onset perturbations. |
 | Meaning of 30 ms pre-roll | Define prefix `t` as `t` ms of post-onset signal plus up to 30 ms of already observed past context. Report an ablation with zero pre-roll. |
 | Complete small-CNN architecture | Publish every convolution, normalization, activation, pooling operation, dropout, classifier layer, input/output shape, and verified parameter count. |

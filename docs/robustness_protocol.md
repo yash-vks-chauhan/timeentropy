@@ -13,12 +13,15 @@ in separate code paths.
 | Analysis family | Conditions | Checkpoint rule | Calibration and policy rule |
 |---|---:|---|---|
 | Condition-matched input ablation | 4 x 5 folds | The primary condition may reuse the parent checkpoint. Each of the other three conditions requires a newly trained checkpoint using its own onset detector and pre-roll. | Fit temperature on that condition's calibration partition and select the policy on that condition's policy-tuning partition. |
-| Evaluation-only perturbation | 11 x 5 folds | Reuse the primary `causal_fixed`, 30 ms pre-roll checkpoint. Retraining is forbidden. | Fit temperature once on the clean calibration partition and select `theta`/`epsilon` once on the clean policy-tuning partition. Apply those fixed values to every perturbed test condition. |
+| Evaluation-only perturbation | 11 x 5 folds | Reuse the primary `causal_noise_floor`, 30 ms pre-roll checkpoint. Retraining is forbidden. | Fit temperature once on the clean calibration partition and select `theta`/`epsilon` once on the clean policy-tuning partition. Apply those fixed values to every perturbed test condition. |
 
-The four input conditions are the primary causal detector with 30 ms pre-roll, a zero-pre-roll
-ablation, the recovered noncausal peak-relative detector, and the secondary causal noise-floor
-detector. The 11 test-time conditions are the clean reference, white noise at 20/10/0 dB SNR,
-and onset-anchor shifts of -50/-30/-10/0/+10/+30/+50 ms.
+The four input conditions are the primary level-adaptive causal detector with 30 ms pre-roll, a
+zero-pre-roll ablation, the recovered noncausal peak-relative detector, and the fixed-threshold
+causal detector. The last is retained specifically so that the manuscript quantifies the
+onset-localisation failure documented in `docs/onset_finding.md` rather than only describing it.
+
+The 11 test-time conditions are the clean reference, white noise at 20/10/0 dB SNR, and
+onset-anchor shifts of -50/-30/-10/0/+10/+30/+50 ms.
 
 The plan records `requires_condition_matched_checkpoint`, `requires_new_training`,
 `execution_stage`, and `selection_source` for every fold-condition job. The test-time CLI rejects
@@ -83,7 +86,7 @@ example:
 
 ```bash
 .venv/bin/python scripts/run_fold.py \
-  --config artifacts/robustness/retraining-configs/causal_fixed_preroll0.yaml \
+  --config artifacts/robustness/retraining-configs/causal_noise_floor_preroll0.yaml \
   --fold 0 --model transformer --device auto
 ```
 
@@ -91,7 +94,7 @@ After all five condition-matched runs exist, verify their summaries and evaluate
 
 ```bash
 .venv/bin/python scripts/run_robustness.py evaluate-retrained \
-  --analysis-id causal_fixed_preroll0 \
+  --analysis-id causal_noise_floor_preroll0 \
   --prefix-ledger artifacts/runs/FOLD0/prefix_predictions.parquet \
   --prefix-ledger artifacts/runs/FOLD1/prefix_predictions.parquet \
   --prefix-ledger artifacts/runs/FOLD2/prefix_predictions.parquet \
@@ -102,7 +105,7 @@ After all five condition-matched runs exist, verify their summaries and evaluate
   --run-summary artifacts/runs/FOLD2/run_summary.json \
   --run-summary artifacts/runs/FOLD3/run_summary.json \
   --run-summary artifacts/runs/FOLD4/run_summary.json \
-  --output-dir artifacts/robustness/retrained/causal_fixed_preroll0
+  --output-dir artifacts/robustness/retrained/causal_noise_floor_preroll0
 ```
 
 Run all frozen test-time conditions for one primary fold:

@@ -36,7 +36,10 @@ reproduced results. The rebuild must regenerate every result from raw audio.
 ## Contradictions that the rebuild resolves
 
 1. The recovered onset threshold depends on whole-utterance peak RMS and is therefore
-   non-causal. It may be retained only as an offline-alignment comparator.
+   non-causal. It may be retained only as an offline-alignment comparator. Label-free validation
+   subsequently showed it also fails to localise onset on about 45% of utterances, because its
+   threshold falls below the recordings' room tone; the primary detector is the level-adaptive
+   causal noise-floor rule. See `docs/onset_finding.md`.
 2. The old wording appears to include the 30 ms pre-roll inside a nominal prefix, while also
    claiming the full nominal duration occurs after onset.
 3. One old algorithm applied stability only "if a previous prefix exists," permitting a
