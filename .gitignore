@@ -1,0 +1,20 @@
+.DS_Store
+.venv/
+*.egg-info/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Raw corpora and generated experiment outputs are reproducible but large.
+data/raw/
+data/archives/
+data/cache/
+artifacts/
+
+# Keep final manifests and small metadata under version control.
+!data/metadata/
+!data/metadata/**
+
+tmp/

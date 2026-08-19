@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "timeentropy"
+version = "0.1.0"
+description = "Reproducible speech-onset and entropy-gated dysarthria experiments"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+  "matplotlib>=3.9,<4",
+  "numpy>=2.0,<3",
+  "pandas>=2.2,<3",
+  "pyarrow>=18,<24",
+  "pyyaml>=6.0,<7",
+  "scikit-learn>=1.5,<2",
+  "scipy>=1.14,<2",
+  "soundfile>=0.12,<1",
+  "torch>=2.5,<3",
+]
+
+[project.optional-dependencies]
+ssl = [
+  "torchaudio>=2.5,<3",
+  "transformers>=4.50,<6",
+]
+dev = [
+  "pytest>=8.3,<10",
+  "pytest-cov>=6,<8",
+  "ruff>=0.9,<1",
+]
+
+[project.scripts]
+timeentropy-build-manifests = "timeentropy.data.manifest:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

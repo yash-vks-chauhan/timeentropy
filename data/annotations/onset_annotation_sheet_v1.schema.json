@@ -1,0 +1,38 @@
+{
+  "columns": {
+    "annotation_schema_version": "constant schema identifier",
+    "annotation_status": "optional workflow status; initially blank",
+    "annotator": "human annotator identifier; initially blank",
+    "diagnosis": "control or dysarthric corpus label",
+    "duration_sec": "indexed file duration in seconds",
+    "label_id": "0 control, 1 dysarthric",
+    "notes": "free-form annotation notes; initially blank",
+    "path": "audio path used for detector evaluation",
+    "prompt_text": "preserved corpus prompt",
+    "prompt_type": "derived three-level annotation stratum",
+    "reference_onset_sec": "manual acoustic onset in seconds; initially blank",
+    "sample_id": "unique utterance identifier",
+    "sample_rate": "indexed source sample rate",
+    "selection_rank_within_speaker": "stable one-based row rank",
+    "selection_seed": "integer SHA-256 selection seed",
+    "session": "corpus session identifier",
+    "speaker_id": "TORGO speaker code",
+    "utterance_id": "utterance identifier within session/channel"
+  },
+  "completed_reference_rule": "a finite non-negative reference_onset_sec not marked excluded/invalid",
+  "default_prompt_targets_per_speaker": {
+    "isolated_token": 7,
+    "sentence": 7,
+    "vocal_exercise": 6
+  },
+  "manual_reference_policy": "reference_onset_sec, annotator, annotation_status, and notes are blank on creation; the software never imputes a manual onset",
+  "prompt_eligibility_rule": "rows with missing or blank prompt_text are excluded rather than assigned an invented prompt type",
+  "prompt_type_rules": {
+    "isolated_token": "after removing bracketed/parenthesized clarifiers, at most one alphanumeric spoken token remains",
+    "sentence": "after clarifier removal, at least two spoken tokens remain",
+    "vocal_exercise": "the entire normalized prompt is enclosed in square brackets"
+  },
+  "reference_time_unit": "seconds from the beginning of the decoded/resampled file",
+  "schema_version": "onset-annotation-v1",
+  "shortage_rule": "take all available rows in a deficient stratum and redistribute the deficit as evenly as possible among strata with remaining samples"
+}

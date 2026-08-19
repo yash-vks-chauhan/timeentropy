@@ -1,0 +1,18 @@
+{
+  "counts": {
+    "control": 5197,
+    "dysarthric": 2934,
+    "speakers": 15,
+    "utterances": 8131
+  },
+  "created_utc": "2026-08-19T15:13:17.385586+00:00",
+  "fold_manifest_sha256": "d9a20423217ae3eda04b7467d79f18f76a88d8abe505abd16c84a5e809d20188",
+  "manifest_sha256": "254ca67a7896e9d8d7407aef9fbb005381e9e6d8f8880652f105c429626991c0",
+  "selection": {
+    "mic": "headMic",
+    "minimum_duration_sec": 0.05,
+    "usable_prompt": true
+  },
+  "source_index": "/Users/yashchauhan/timeentropy_runtime/artifacts/metadata/torgo_index.csv",
+  "source_index_sha256": "fc6d36770686cfadd5a6d94fecc7c966a1cbf69efedf18cd095a1f69ff803908"
+}

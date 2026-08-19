@@ -1,0 +1,74 @@
+schema_version: 1
+status: "frozen_before_test_evaluation"
+parent_experiment_config: "configs/rebuild_v1.yaml"
+purpose: "Prespecified reviewer-requested onset, pre-roll, noise, and stability analyses"
+
+scope:
+  model: "transformer"
+  folds: [0, 1, 2, 3, 4]
+  seed: 20260819
+  note: "Ablations use the prospectively designated headline model and primary seed only."
+
+retrained_input_ablations:
+  - analysis_id: "primary_causal_fixed_preroll30"
+    onset_mode: "causal_fixed"
+    pre_roll_ms: 30
+    role: "primary"
+  - analysis_id: "causal_fixed_preroll0"
+    onset_mode: "causal_fixed"
+    pre_roll_ms: 0
+    role: "pre_roll_ablation"
+  - analysis_id: "offline_peak_preroll30"
+    onset_mode: "recovered_offline_peak"
+    pre_roll_ms: 30
+    role: "noncausal_alignment_comparator"
+  - analysis_id: "causal_noise_floor_preroll30"
+    onset_mode: "causal_noise_floor"
+    pre_roll_ms: 30
+    role: "secondary_causal_detector"
+
+evaluation_only_noise:
+  reference_checkpoint: "primary_causal_fixed_preroll30"
+  noise_type: "zero_mean_white_gaussian"
+  insertion_stage: "after_onset_crop_before_stft"
+  snr_db: [20.0, 10.0, 0.0]
+  include_clean_reference: true
+  randomization: "sha256(primary_seed,sample_id,snr_db)"
+  caveat: "Synthetic white noise is a stress test, not a substitute for real far-field microphones."
+
+evaluation_only_onset_perturbation:
+  reference_checkpoint: "primary_causal_fixed_preroll30"
+  offset_ms: [-50, -30, -10, 0, 10, 30, 50]
+  sign_convention: "estimated_onset = primary_onset + offset"
+  boundary_policy: "clip crop anchor to available waveform; preserve exact crop length by padding"
+
+onset_manual_validation:
+  annotation_samples: 300
+  allocation: "20 deterministic samples per each of 15 speakers"
+  prompt_strata: ["vocal_exercise", "isolated_token", "sentence"]
+  reference_unit: "seconds from WAV start"
+  double_annotation_target_fraction: 0.20
+  report:
+    - detector_failure_rate
+    - signed_error_ms
+    - mean_absolute_error_ms
+    - median_absolute_error_ms
+    - p90_absolute_error_ms
+    - p95_absolute_error_ms
+    - within_20_ms
+    - within_50_ms
+    - speaker_cluster_bootstrap_95_ci
+
+error_audit:
+  primary_system: "complete-temperature_scaled"
+  error_types: ["false_dysarthric", "false_control"]
+  stratify_by:
+    - speaker_id
+    - prompt_type
+    - prefix_ms
+    - onset_detected
+    - onset_absolute_error_bin
+    - duration_bin
+    - entropy_bin
+  qualitative_examples_per_error_type: 20
+  selection: "deterministic stratified hash sample before qualitative labeling"
