@@ -214,6 +214,13 @@ latency/accuracy constraint on validation speakers only — not the uncertainty 
 The normalized form is retained because it keeps θ interpretable and because it generalizes
 unchanged to C > 2 in future multi-class severity work.
 
+We do not merely concede this point in the text; we test it. The revised policy ablation
+includes a **`max_softmax_confidence`** arm alongside `entropy_only`, `entropy_class_stability`,
+`entropy_value_stability`, `full_policy`, and the `fixed_300` baseline, so the reader can see
+directly how much of the result is attributable to the uncertainty statistic and how much to the
+stability conditions and the constrained selection. **These ablation results are pending
+completion of the frozen reruns.**
+
 ### R3.8 What is the value of Δ in Equation (4), and how is the previous prediction handled at the first candidate decision point of 200 ms?
 
 **Author response.** **Δ = 50 ms**, the spacing between adjacent evaluated prefixes. This is now

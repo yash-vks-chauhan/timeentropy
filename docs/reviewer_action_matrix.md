@@ -52,9 +52,13 @@ mentioned only to explain why the revision was necessary.
 | Modern speech baseline | Add a clearly specified pretrained/self-supervised speech representation using the identical speaker folds and input durations. Mark frozen-feature versus fine-tuned use explicitly. |
 
 The calibration, stopping-policy, reporting, onset-validation, error-audit, profiling,
-modern-reference, and robustness execution layers are now implemented and tested. They remain
-scientifically **pending** until the recovered audio has been validated and the frozen fold runs
-have completed; implementation tests are not substitutes for corpus results.
+modern-reference, and robustness execution layers are now implemented and tested. A sequential
+orchestration layer (`src/timeentropy/orchestration.py`, `scripts/run_experiments.py`) expands
+the frozen configs into an auditable 100-job matrix, refuses to execute on an unfrozen config,
+a dirty worktree, incomplete audio, or missing dependencies, and stamps every artifact with the
+Git commit that produced it. They remain scientifically **pending** until the recovered audio
+has been validated and the frozen fold runs have completed; implementation tests are not
+substitutes for corpus results.
 
 ## Priority 4: claims and scope
 
@@ -87,4 +91,7 @@ claiming that noise injection substitutes for an independent corpus or real micr
 4. Recomputed tables, figures, confidence intervals, and profiling results from those ledgers.
 5. Revised manuscript with tracked or highlighted changes.
 6. Point-by-point response document using the supplied response sample only as a formatting
-   guide; every response must cite a manuscript page/line and an artifact or analysis.
+   guide; every response must cite a manuscript page/line and an artifact or analysis. Drafted
+   in `docs/reviewer_response.md`: Reviewer 3 R3.1-R3.10 are answered, with R3.2, R3.6, R3.7,
+   and R3.10 explicitly marked pending the frozen reruns. Reviewer 1 and Reviewer 2 sections
+   await their comments.
