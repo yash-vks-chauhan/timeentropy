@@ -8,6 +8,7 @@ from pathlib import Path
 
 from timeentropy.orchestration import (
     build_run_matrix,
+    dependency_commit_drift,
     dependency_errors,
     execute_jobs,
     plan_record,
@@ -100,6 +101,14 @@ def parse_args() -> argparse.Namespace:
         "--force-complete",
         action="store_true",
         help="Re-execute jobs that already verify as complete.",
+    )
+    run.add_argument(
+        "--allow-dependency-commit-drift",
+        action="store_true",
+        help=(
+            "Consume dependencies produced at a different commit. Every content invariant is "
+            "still enforced; the differing commits are printed and written into the plan."
+        ),
     )
 
     for subparser in (plan, preflight, status, run):
@@ -222,11 +231,27 @@ def main() -> None:
     if commit is None:
         raise SystemExit("Refusing to execute: no Git commit is available to stamp artifacts.")
 
-    unmet_dependencies = dependency_errors(selected, matrix, expected_git_commit=commit)
+    unmet_dependencies = dependency_errors(
+        selected,
+        matrix,
+        expected_git_commit=commit,
+        allow_commit_drift=args.allow_dependency_commit_drift,
+    )
     if unmet_dependencies:
         raise SystemExit(
             "Refusing to execute: unmet dependencies.\n  " + "\n  ".join(unmet_dependencies)
         )
+
+    drift = dependency_commit_drift(selected, matrix, expected_git_commit=commit)
+    if drift and not args.allow_dependency_commit_drift:
+        raise SystemExit(
+            "Refusing to execute: dependencies were produced at other commits.\n  "
+            + "\n  ".join(f"{run_id} produced at {value}" for run_id, value in drift.items())
+            + "\n Pass --allow-dependency-commit-drift to consume them; the difference will "
+            "be recorded."
+        )
+    for run_id, value in drift.items():
+        print(f"[ drift ] {run_id} was produced at {value}, not {commit}", file=sys.stderr)
 
     statuses = execute_jobs(
         matrix,
@@ -241,6 +266,7 @@ def main() -> None:
         json.dumps(
             {
                 "git_commit": commit,
+                "dependency_commit_drift": drift,
                 "executed_jobs": len(statuses),
                 "states": {
                     state: sum(1 for item in statuses if item.state == state)

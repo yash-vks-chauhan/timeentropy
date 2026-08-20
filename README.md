@@ -123,6 +123,12 @@ mid-sweep therefore splits the provenance chain and halts the run, **even when o
 changed** — the guard deliberately does not judge which files are scientifically relevant. Land
 every commit before launching, and leave the worktree untouched until the sweep finishes.
 
+A stage that consumes an earlier stage's artifacts across an intervening commit is a different
+case, and legitimate: pass `--allow-dependency-commit-drift`. Every content invariant — config
+content hash, model-architecture hash, manifest hashes, ledger schema — is still enforced; only
+the commit-equality gate is lifted, and the differing commits are printed and written into the
+execution plan so they can be reported.
+
 No revised scientific result should be quoted until audio recovery, all frozen fold runs,
 calibration/policy selection, ledger validation, and report generation have completed. Passing
 unit tests establishes implementation invariants; it is not experimental evidence.

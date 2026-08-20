@@ -13,6 +13,7 @@ from timeentropy.config import load_yaml
 from timeentropy.orchestration import (
     STAGE_ORDER,
     build_run_matrix,
+    dependency_commit_drift,
     dependency_errors,
     plan_record,
     run_preflight,
@@ -209,3 +210,52 @@ def test_default_interpreter_can_import_the_project(matrix) -> None:
 def test_matrix_identity_is_independent_of_the_interpreter(matrix) -> None:
     other = build_run_matrix(python_executable="/somewhere/else/python")
     assert other.matrix_sha256 == matrix.matrix_sha256
+
+
+def test_dependency_commit_drift_is_reported_and_gated(tmp_path) -> None:
+    """A later stage may consume an earlier stage's artifacts, but the drift must surface."""
+
+    isolated = build_run_matrix(output_root=tmp_path / "runs")
+    consumer = select_jobs(isolated, stages=["robustness_test_time"], folds=[0])[:1]
+    dependency_id = consumer[0].dependency_run_ids[0]
+    dependency = next(job for job in isolated.jobs if job.run_id == dependency_id)
+
+    # No artifacts yet: nothing to drift, and the dependency is simply unmet.
+    assert dependency_commit_drift(consumer, isolated, expected_git_commit="aaa") == {}
+    assert dependency_errors(consumer, isolated, expected_git_commit="aaa")
+
+    dependency.output_directory.mkdir(parents=True)
+    dependency.summary_path.write_text(
+        json.dumps({"environment": {"git_commit": "bbb"}}),
+        encoding="utf-8",
+    )
+
+    drift = dependency_commit_drift(consumer, isolated, expected_git_commit="aaa")
+    assert drift == {dependency_id: "bbb"}
+
+    # A matching commit is not drift, and no expectation means nothing to compare.
+    assert dependency_commit_drift(consumer, isolated, expected_git_commit="bbb") == {}
+    assert dependency_commit_drift(consumer, isolated, expected_git_commit=None) == {}
+
+
+def test_allow_commit_drift_still_enforces_content_invariants(tmp_path) -> None:
+    """Relaxing the commit check must not relax anything else."""
+
+    isolated = build_run_matrix(output_root=tmp_path / "runs")
+    consumer = select_jobs(isolated, stages=["robustness_test_time"], folds=[0])[:1]
+    dependency_id = consumer[0].dependency_run_ids[0]
+    dependency = next(job for job in isolated.jobs if job.run_id == dependency_id)
+
+    dependency.output_directory.mkdir(parents=True)
+    dependency.summary_path.write_text(
+        json.dumps({"environment": {"git_commit": "bbb"}}),
+        encoding="utf-8",
+    )
+
+    # The summary exists but the run is otherwise incomplete, so the dependency stays
+    # unmet even with the commit check relaxed.
+    errors = dependency_errors(
+        consumer, isolated, expected_git_commit="aaa", allow_commit_drift=True
+    )
+    assert errors
+    assert all("git commit" not in message for message in errors)

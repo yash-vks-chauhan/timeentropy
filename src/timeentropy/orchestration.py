@@ -1229,17 +1229,60 @@ def materialize_retraining_configs(
     return paths
 
 
+def dependency_commit_drift(
+    selected: Sequence[ExperimentJob],
+    matrix: RunMatrix,
+    *,
+    expected_git_commit: str | None,
+) -> dict[str, str]:
+    """Map each already-complete dependency to the commit it was actually produced at.
+
+    A pipeline stage legitimately runs at a later commit than the stage it consumes, so a
+    dependency's commit is recorded rather than required to match. Every other invariant --
+    config content hash, architecture hash, manifest hashes, ledger schema -- is still
+    enforced by ``verify_job_completion``.
+    """
+
+    if expected_git_commit is None:
+        return {}
+    selected_ids = {job.run_id for job in selected}
+    lookup = {job.run_id: job for job in matrix.jobs}
+    drift: dict[str, str] = {}
+    for job in selected:
+        for dependency_id in job.dependency_run_ids:
+            if dependency_id in selected_ids or dependency_id in drift:
+                continue
+            dependency = lookup[dependency_id]
+            if dependency.summary_path.is_file():
+                try:
+                    summary = json.loads(dependency.summary_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                recorded = summary.get("environment", {}).get("git_commit")
+                if recorded is not None and recorded != expected_git_commit:
+                    drift[dependency_id] = str(recorded)
+    return drift
+
+
 def dependency_errors(
     selected: Sequence[ExperimentJob],
     matrix: RunMatrix,
     *,
     expected_git_commit: str | None,
+    allow_commit_drift: bool = False,
 ) -> tuple[str, ...]:
-    """Return unmet dependencies that are neither selected nor already complete."""
+    """Return unmet dependencies that are neither selected nor already complete.
+
+    ``allow_commit_drift`` permits a dependency that was produced at a different commit, so
+    long as it still satisfies every content invariant. Use it when a later stage consumes an
+    earlier stage's artifacts across an intervening commit; the drift is reported by
+    ``dependency_commit_drift`` and must be recorded alongside the results.
+    """
 
     selected_ids = {job.run_id for job in selected}
     lookup = {job.run_id: job for job in matrix.jobs}
     protocol = load_robustness_protocol(matrix.robustness_config_path)
+    dependency_commit = None if allow_commit_drift else expected_git_commit
     errors: list[str] = []
     for job in selected:
         for dependency_id in job.dependency_run_ids:
@@ -1248,7 +1291,7 @@ def dependency_errors(
             dependency = lookup[dependency_id]
             status = verify_job_completion(
                 dependency,
-                expected_git_commit=expected_git_commit,
+                expected_git_commit=dependency_commit,
                 robustness_protocol=protocol,
             )
             if status.state != "complete":
