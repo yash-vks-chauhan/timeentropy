@@ -14,7 +14,10 @@ from timeentropy.config import PROJECT_ROOT
 from timeentropy.evaluation.ledger import validate_oof_test_coverage
 from timeentropy.provenance import environment_record, sha256_file, sha256_json
 from timeentropy.reporting.bootstrap import clustered_speaker_bootstrap_ci
-from timeentropy.reporting.comparison import paired_model_comparisons
+from timeentropy.reporting.comparison import (
+    paired_model_comparisons,
+    paired_policy_comparisons,
+)
 from timeentropy.reporting.summaries import (
     build_calibration_tables,
     build_summary_tables,
@@ -96,6 +99,15 @@ def generate_report_bundle(
     else:
         comparison_frame, mcnemar_frame = pd.DataFrame(), pd.DataFrame()
 
+    # Policy-versus-baseline testing is independent of how many models are present: it is the
+    # comparison the adaptive policy is actually sold on, so it always runs.
+    policy_frame, policy_mcnemar_frame = paired_policy_comparisons(
+        enriched,
+        replicates=bootstrap_replicates,
+        seed=bootstrap_seed,
+        confidence=confidence,
+    )
+
     output_path.mkdir(parents=True, exist_ok=True)
     tables = {
         **asdict(summaries),
@@ -104,6 +116,8 @@ def generate_report_bundle(
         "calibration_reliability_bins": calibration.reliability_bins,
         "paired_model_comparisons": comparison_frame,
         "mcnemar_sensitivity": mcnemar_frame,
+        "paired_policy_comparisons": policy_frame,
+        "policy_mcnemar_sensitivity": policy_mcnemar_frame,
     }
     for stem, frame in tables.items():
         _write_table(frame, output_path, stem)

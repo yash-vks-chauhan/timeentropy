@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 from timeentropy.reporting.summaries import build_summary_tables
 
@@ -95,3 +96,51 @@ def test_latency_counts_exactly_reproduce_mean_latency() -> None:
         (counts["decision_time_ms"] * counts["count"]).sum() / counts["count"].sum()
     )
     assert reconstructed == tables.latency_summary.iloc[0]["mean_latency_ms"] == 265.0
+
+
+def test_speaker_metrics_expose_single_speaker_domination() -> None:
+    """R1.18: a per-speaker table is the only place speaker domination is visible."""
+
+    rows = []
+    # One speaker supplies 80% of the utterances and is classified perfectly; a second
+    # speaker is always wrong. The pooled accuracy hides the second entirely.
+    for index in range(80):
+        rows.append(("DOM", 0, 0, index))
+    for index in range(20):
+        rows.append(("SMALL", 1, 0, 80 + index))
+    enriched = pd.DataFrame(
+        [
+            {
+                "system_id": "sys",
+                "model_id": "transformer",
+                "seed": 20260819,
+                "onset_variant": "causal_noise_floor",
+                "pre_roll_ms": 30,
+                "policy_id": "complete-raw",
+                "sample_id": f"s{index:03d}",
+                "speaker_id": speaker,
+                "fold": 0,
+                "label_id": label,
+                "predicted_label": prediction,
+                "decision_time_ms": 200,
+                "forced_fallback": False,
+                "accepted_at_endpoint": False,
+            }
+            for speaker, label, prediction, index in rows
+        ]
+    )
+
+    tables = build_summary_tables(enriched)
+    speakers = tables.speaker_metrics.set_index("speaker_id")
+
+    assert set(speakers.index) == {"DOM", "SMALL"}
+    assert speakers.loc["DOM", "accuracy"] == pytest.approx(1.0)
+    assert speakers.loc["SMALL", "accuracy"] == pytest.approx(0.0)
+    assert speakers.loc["DOM", "share_of_pooled_utterances"] == pytest.approx(0.8)
+    assert speakers.loc["SMALL", "error_count"] == 20
+    assert speakers.loc["DOM", "speaker_class"] == "control"
+    assert speakers.loc["SMALL", "speaker_class"] == "dysarthric"
+
+    # The pooled number alone would report 80% and conceal the failed speaker.
+    pooled = tables.pooled_metrics.iloc[0]
+    assert pooled["accuracy"] == pytest.approx(0.8)

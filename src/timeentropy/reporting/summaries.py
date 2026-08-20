@@ -25,6 +25,7 @@ class SummaryTables:
     error_breakdown: pd.DataFrame
     fold_metrics: pd.DataFrame
     fold_summary: pd.DataFrame
+    speaker_metrics: pd.DataFrame
     latency_counts: pd.DataFrame
     latency_summary: pd.DataFrame
 
@@ -174,6 +175,7 @@ def build_summary_tables(enriched: pd.DataFrame) -> SummaryTables:
     classes: list[dict[str, object]] = []
     errors: list[dict[str, object]] = []
     folds: list[dict[str, object]] = []
+    speakers: list[dict[str, object]] = []
     latency_counts: list[dict[str, object]] = []
     latency_summary: list[dict[str, object]] = []
 
@@ -285,6 +287,37 @@ def build_summary_tables(enriched: pd.DataFrame) -> SummaryTables:
                 }
             )
 
+        # R1.18/R3.10: whether a few speakers dominate the aggregate is only visible
+        # per speaker. Each TORGO speaker holds a single class, so recall on that class is
+        # the meaningful rate and the opposite-class fields are left empty rather than faked.
+        for speaker, speaker_group in group.groupby("speaker_id", sort=True):
+            labels = speaker_group["label_id"].to_numpy()
+            predictions = speaker_group["predicted_label"].to_numpy()
+            single_label = int(labels[0]) if len(set(labels.tolist())) == 1 else None
+            speakers.append(
+                {
+                    **metadata,
+                    "speaker_id": str(speaker),
+                    "estimand": "speaker_specific",
+                    "utterances": len(speaker_group),
+                    "speaker_class": (
+                        None
+                        if single_label is None
+                        else ("dysarthric" if single_label == 1 else "control")
+                    ),
+                    "share_of_pooled_utterances": _safe_divide(len(speaker_group), len(group)),
+                    "accuracy": float((labels == predictions).mean()),
+                    "predicted_dysarthric_rate": float((predictions == 1).mean()),
+                    "error_count": int((labels != predictions).sum()),
+                    "mean_latency_ms": float(
+                        speaker_group["decision_time_ms"].to_numpy(dtype=np.float64).mean()
+                    ),
+                    "forced_fallback_rate": float(
+                        speaker_group["forced_fallback"].astype(bool).mean()
+                    ),
+                }
+            )
+
     fold_frame = pd.DataFrame(folds)
     fold_summary: list[dict[str, object]] = []
     summary_metrics = (
@@ -323,6 +356,7 @@ def build_summary_tables(enriched: pd.DataFrame) -> SummaryTables:
         error_breakdown=pd.DataFrame(errors),
         fold_metrics=fold_frame,
         fold_summary=pd.DataFrame(fold_summary),
+        speaker_metrics=pd.DataFrame(speakers),
         latency_counts=pd.DataFrame(latency_counts),
         latency_summary=pd.DataFrame(latency_summary),
     )

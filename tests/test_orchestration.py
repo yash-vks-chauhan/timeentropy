@@ -88,16 +88,19 @@ def test_selection_filters_and_dependency_closure(matrix) -> None:
         select_jobs(matrix, run_ids=["not-a-run"])
 
 
-def test_dependency_errors_reports_unsatisfied_prerequisites(matrix) -> None:
-    test_time = select_jobs(matrix, stages=["robustness_test_time"], folds=[0])
-    errors = dependency_errors(test_time, matrix, expected_git_commit=None)
+def test_dependency_errors_reports_unsatisfied_prerequisites(tmp_path) -> None:
+    # An isolated output root: asserting against artifacts/runs would flip this test as
+    # soon as the real primary stage completes.
+    isolated = build_run_matrix(output_root=tmp_path / "runs")
+    test_time = select_jobs(isolated, stages=["robustness_test_time"], folds=[0])
+    errors = dependency_errors(test_time, isolated, expected_git_commit=None)
     assert errors
     assert all("requires" in message for message in errors)
 
     closed = select_jobs(
-        matrix, stages=["robustness_test_time"], folds=[0], with_dependencies=True
+        isolated, stages=["robustness_test_time"], folds=[0], with_dependencies=True
     )
-    assert dependency_errors(closed, matrix, expected_git_commit=None) == ()
+    assert dependency_errors(closed, isolated, expected_git_commit=None) == ()
 
 
 def test_completion_states_distinguish_pending_from_partial(matrix, tmp_path) -> None:
