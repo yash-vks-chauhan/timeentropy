@@ -1448,6 +1448,7 @@ We list these separately rather than leaving them implied:
 | Request | Status | Reason |
 |---|---|---|
 | Cross-corpus test on UA-Speech or equivalent (R1.14, R1-EV.7) | **Not completed** | New-data experiment requiring separate access, task mapping, and protocol. Claim narrowed; listed as future work. No substitute offered. |
+| Modern pretrained speech baseline (R1.10) | **Specified, not yet run** | WavLM Base+ is fully specified and pinned to an immutable revision, and the loader is implemented and tested, but the reference has not been executed. Reported as specified-and-pending rather than presented as a result. |
 | Far-field / mobile / conversational microphone validation (R1.17, R1-EV.8) | **Not completed** | Requires recordings TORGO's head-mounted subset does not contain. Additive noise is reported but explicitly not presented as a far-field simulation. |
 | Dysarthria severity and neurological etiology per speaker (R2.8) | **Partially completed** | Not present in the surviving corpus index. Reported only where authoritative TORGO documentation supports it; otherwise labelled not available rather than imputed. |
 | Exact historical EfficientNet-lite and CNN-GRU results (R2.7, R3.4) | **Withdrawn** | No variant identifier, layer definition, checkpoint, or prediction file survives. Withdrawn rather than reconstructed. |
