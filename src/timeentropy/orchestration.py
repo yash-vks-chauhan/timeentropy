@@ -1229,6 +1229,41 @@ def materialize_retraining_configs(
     return paths
 
 
+def _recorded_git_commit(job: ExperimentJob) -> str | None:
+    """Return the commit an artifact records, wherever that stage happens to store it.
+
+    Robustness summaries carry ``environment.git_commit`` directly. Fold summaries do not:
+    training writes the environment into the checkpoint metadata instead. Reading only the
+    summary silently reports "no drift" for every fold dependency.
+    """
+
+    if job.summary_path.is_file():
+        try:
+            summary = json.loads(job.summary_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            summary = {}
+        recorded = summary.get("environment", {}).get("git_commit")
+        if recorded is not None:
+            return str(recorded)
+
+    if job.checkpoint_path is not None and job.checkpoint_path.is_file():
+        import torch
+
+        try:
+            checkpoint = torch.load(
+                job.checkpoint_path, map_location="cpu", weights_only=False, mmap=True
+            )
+        except Exception:  # noqa: BLE001  # An unreadable checkpoint is reported elsewhere.
+            return None
+        if isinstance(checkpoint, dict):
+            metadata = checkpoint.get("metadata")
+            if isinstance(metadata, dict):
+                recorded = metadata.get("environment", {}).get("git_commit")
+                if recorded is not None:
+                    return str(recorded)
+    return None
+
+
 def dependency_commit_drift(
     selected: Sequence[ExperimentJob],
     matrix: RunMatrix,
@@ -1253,14 +1288,9 @@ def dependency_commit_drift(
             if dependency_id in selected_ids or dependency_id in drift:
                 continue
             dependency = lookup[dependency_id]
-            if dependency.summary_path.is_file():
-                try:
-                    summary = json.loads(dependency.summary_path.read_text(encoding="utf-8"))
-                except (OSError, json.JSONDecodeError):
-                    continue
-                recorded = summary.get("environment", {}).get("git_commit")
-                if recorded is not None and recorded != expected_git_commit:
-                    drift[dependency_id] = str(recorded)
+            recorded = _recorded_git_commit(dependency)
+            if recorded is not None and recorded != expected_git_commit:
+                drift[dependency_id] = recorded
     return drift
 
 

@@ -238,6 +238,36 @@ def test_dependency_commit_drift_is_reported_and_gated(tmp_path) -> None:
     assert dependency_commit_drift(consumer, isolated, expected_git_commit=None) == {}
 
 
+def test_drift_is_read_from_the_checkpoint_when_the_summary_omits_it(tmp_path) -> None:
+    """Fold summaries carry no environment block; training records it in the checkpoint.
+
+    Reading only the summary reports "no drift" for every fold dependency, which would make
+    the recorded audit trail silently empty exactly where it matters.
+    """
+
+    import torch
+
+    isolated = build_run_matrix(output_root=tmp_path / "runs")
+    consumer = select_jobs(isolated, stages=["robustness_test_time"], folds=[0])[:1]
+    dependency_id = consumer[0].dependency_run_ids[0]
+    dependency = next(job for job in isolated.jobs if job.run_id == dependency_id)
+
+    dependency.output_directory.mkdir(parents=True)
+    # A fold summary as training actually writes it: no "environment" key at all.
+    dependency.summary_path.write_text(json.dumps({"run_id": dependency_id}), encoding="utf-8")
+    assert dependency_commit_drift(consumer, isolated, expected_git_commit="aaa") == {}
+
+    assert dependency.checkpoint_path is not None
+    torch.save(
+        {"metadata": {"environment": {"git_commit": "ccc"}}},
+        dependency.checkpoint_path,
+    )
+    assert dependency_commit_drift(consumer, isolated, expected_git_commit="aaa") == {
+        dependency_id: "ccc"
+    }
+    assert dependency_commit_drift(consumer, isolated, expected_git_commit="ccc") == {}
+
+
 def test_allow_commit_drift_still_enforces_content_invariants(tmp_path) -> None:
     """Relaxing the commit check must not relax anything else."""
 
