@@ -52,6 +52,12 @@ We would rather be direct than appear compliant:
 Manuscript locations are given by section, table, and figure number; page and line numbers refer
 to the revised typeset manuscript.
 
+> **Scope of the numbers below.** All values come from the rebuilt pipeline, from one canonical
+> out-of-fold ledger covering all 8,131 utterances, with the Transformer as the prospectively
+> designated headline model unless stated otherwise. They differ substantially from the submitted
+> manuscript's values; the reasons are set out at R1.4 and R1.20.
+
+
 ---
 ## Reviewer 1 — comments with author response
 
@@ -79,11 +85,36 @@ the protocol around it:
 4. an application setting — **sub-300 ms dysarthria detection from speech onset** — in which the
    accuracy/earliness trade-off is the object of study rather than a by-product.
 
-We also make the claim falsifiable. The revised ablation includes a **`max_softmax_confidence`**
+We also made the claim falsifiable. The revised ablation includes a **`max_softmax_confidence`**
 arm alongside `entropy_only`, `entropy_class_stability`, `entropy_value_stability`, and
 `full_policy`, so a reader can see exactly how much of the effect comes from the uncertainty
-statistic and how much from the stability conditions and constrained selection. If the
-max-softmax arm matches the entropy arm, that is a result we report, not one we hide.
+statistic and how much from the stability conditions and constrained selection. The max-softmax
+arm does match the entropy arm exactly, and we report that rather than hide it.
+
+**Measured ablation (Transformer, pooled out-of-fold, calibrated unless noted).**
+
+| Policy | Accuracy | Macro-F1 | Mean decision time | Forced fallback |
+|---|---:|---:|---:|---:|
+| Fixed 200 ms | 43.07% | 43.04% | 200.0 ms | 0% |
+| Fixed 250 ms | 42.11% | 42.11% | 250.0 ms | 0% |
+| Fixed 300 ms | 41.94% | 41.93% | 300.0 ms | 0% |
+| Entropy only (raw) | 42.33% | 42.33% | 209.1 ms | 4.2% |
+| **Max-softmax confidence (raw)** | **42.33%** | **42.33%** | **209.1 ms** | **4.2%** |
+| Entropy + class stability (raw) | 42.28% | 42.28% | 212.9 ms | 5.3% |
+| Entropy + entropy stability (raw) | 41.99% | 41.99% | 221.4 ms | 7.3% |
+| Complete policy (raw) | 41.99% | 41.99% | 224.4 ms | 8.9% |
+| Complete policy (calibrated) | 41.95% | 41.95% | 269.4 ms | 64.2% |
+
+Two things follow, and we report both plainly.
+
+**The max-softmax arm reproduces the entropy arm to every digit** — 42.33% / 42.33% / 209.1 ms /
+4.2% — and the pipeline labels the correspondence `exact_for_binary_probabilities`. Our concession
+above is therefore not a rhetorical hedge but a measured identity.
+
+**No component of Equation 4 contributes a performance gain.** Every policy variant sits within
+0.4 points of every other, and all of them sit at or below the fixed 200 ms baseline. Adding the
+stability conditions increases latency without improving accuracy. We report this as the result of
+the ablation the reviewer asked for, rather than presenting the complete policy as validated.
 
 §2 is extended with the early time-series classification, uncertainty/rejection, and calibration
 literature that the submitted version treated too briefly (see also R2.2).
@@ -150,8 +181,24 @@ predictions." Full specification (see also R2.1, R2.6, R3.6):
   Test rows are reported only at validation-selected values; every metrics summary carries an
   explicit zero-count audit field for test rows used in fitting or selection.
 
-Sensitivity analysis is at R1-EV.3. **Selected values are pending completion of the frozen
-reruns.**
+Sensitivity analysis is at R1-EV.3.
+
+**Selected values (Transformer, complete calibrated policy).** Chosen on the policy-tuning
+partition of validation speakers only:
+
+| Fold | θ | ε | Validation macro-F1 | Fixed-300 validation macro-F1 | Mean decision time | Forced fallback |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0 | 0.95 | 0.20 | 0.786 | 0.787 | 212.6 ms | 6.9% |
+| 1 | 0.30 | 0.00 | 0.200 | 0.200 | 300.0 ms | 100% |
+| 2 | 0.95 | 0.20 | 0.664 | 0.655 | 228.5 ms | 16.8% |
+| 3 | 0.30 | 0.00 | 0.466 | 0.466 | 300.0 ms | 100% |
+| 4 | 0.30 | 0.00 | 0.538 | 0.538 | 300.0 ms | 100% |
+
+We draw the reviewer's attention to folds 1, 3 and 4, where the constrained search selects the
+**lowest admissible θ with ε = 0** and the policy then never fires early: every utterance falls
+back to 300 ms. After calibration the posteriors in those folds are never confident enough to
+satisfy the entropy gate. The early-decision mechanism is therefore inactive in three of five
+folds, which we report rather than average away.
 
 ### R1.4 Quantitative validation of speech-onset detection
 
@@ -265,6 +312,20 @@ Every fold's accuracy, macro-F1, dysarthric recall, mean decision time, and forc
 is reported individually (R1-EV.2), with per-speaker breakdowns and speaker-clustered bootstrap
 confidence intervals (R1.7, R1.18).
 
+**Measured (Transformer, complete calibrated policy).** The two estimands differ by a
+non-trivial margin, which is precisely why they must be labelled:
+
+| Estimand | Accuracy | Macro-F1 |
+|---|---|---|
+| Pooled out-of-fold (8,131 utterances) | 41.95% | 41.95% |
+| Unweighted fold mean ± SD | **43.90% ± 19.58** | 41.67% ± 18.59 |
+
+The **1.95-point** gap between pooled and fold-mean accuracy is the same mechanism that produced
+the Figure 6 / Table 3 inconsistency the reviewer identified. Note also the fold standard
+deviation of **19.58 points** — larger than any difference the submitted manuscript reported
+between architectures or between operating points. Per-fold accuracies at fixed 300 ms are
+48.0%, 24.4%, 39.3%, 75.3% and 32.4%.
+
 ### R1.7 Only 15 speakers — report fold-wise variation and confidence intervals
 
 **Author response.** Accepted in full. With 15 speakers, a point estimate is not an adequate
@@ -280,8 +341,23 @@ intervals**, resampling *speakers* rather than utterances, since utterances with
 not independent and utterance-level resampling would understate the interval substantially.
 Paired model comparisons use the same speaker-clustered scheme (R1.12).
 
-We also state the corresponding limitation plainly in §5.4: with 15 speakers and 7/8 class
-split, these intervals are wide, and we do not claim precision the design cannot support.
+**Measured intervals (Transformer, complete calibrated policy, 15 speaker clusters,
+10,000 replicates).**
+
+| Metric | Estimate | 95% CI |
+|---|---:|---|
+| Accuracy | 0.4195 | 0.3042 – 0.5519 |
+| Macro-F1 | 0.4195 | 0.2949 – 0.5473 |
+| Balanced accuracy | 0.4555 | 0.3249 – 0.5884 |
+| Dysarthric recall | 0.5937 | 0.4213 – 0.7910 |
+| Specificity | 0.3211 | 0.1447 – 0.5052 |
+| Mean decision time | 269.4 ms | 264.6 – 274.0 ms |
+
+We state the corresponding limitation plainly in §5.4, and the intervals make it concrete: the
+accuracy interval spans **25 percentage points**, and the balanced-accuracy interval
+**includes 0.50**, so the system is not statistically distinguishable from chance on this design.
+Only the latency estimates are precise, because latency does not depend on speaker difficulty in
+the way accuracy does. We do not claim precision the design cannot support.
 
 ### R1.8 Report original and effective class distributions and explain balancing exactly
 
@@ -357,8 +433,18 @@ The revision reports, with explicit definitions given in the text:
   post-hoc choice;
 - the **full distribution** of decision times, not only the mean, plus the forced-fallback rate.
 
-We prespecify these definitions before seeing test results precisely so that we cannot select the
-summary that flatters the method. See R1-EV.6 and R2.12.
+**Measured (Transformer, pooled out-of-fold).** Decision-time distribution under the complete
+calibrated policy: **200 ms 2,285 (28.1%), 250 ms 408 (5.0%), 300 ms 5,438 (66.9%)**, of which
+5,224 are forced fallbacks and 214 are accepted at the endpoint. Mean decision time
+**269.4 ms**, consumed fraction 0.898, timeliness 0.102.
+
+The accuracy–earliness curve is flat to slightly negative: pooled accuracy is 43.07% at fixed
+200 ms, 42.11% at 250 ms, and 41.94% at 300 ms. Waiting longer does not help this system, so the
+harmonic-mean trade-off metrics are maximised at the *shortest* prefix rather than by the adaptive
+policy. We report that as found.
+
+We prespecified these definitions before seeing test results precisely so that we could not select
+the summary that flatters the method. See R1-EV.6 and R2.12.
 
 ### R1.12 Statistical testing for the claimed sensitivity improvement
 
@@ -377,7 +463,31 @@ non-significant result as evidence of equivalence — with this sample size the 
 underpowered for small effects, and we say so. Second, if the dysarthric-recall improvement is
 not statistically distinguishable from the fixed-duration baseline, we will report that plainly
 and soften the claim accordingly, since the reviewer is right that the reported improvement was
-modest. **Pending the frozen reruns.**
+modest.
+
+**Measured comparison (Transformer, complete calibrated policy vs each fixed baseline).**
+Speaker-clustered bootstrap 95% intervals on the paired difference, plus exact McNemar counts on
+identical utterances:
+
+| Baseline | Δ accuracy [95% CI] | Δ dysarthric recall [95% CI] | Δ mean latency [95% CI] | McNemar *p* |
+|---|---|---|---|---:|
+| Fixed 200 ms | −0.037 … +0.009 | **+0.006 … +0.047** | +47.8 … +88.8 ms | 0.0009 |
+| Fixed 250 ms | −0.019 … +0.012 | −0.002 … +0.030 | −2.3 … +39.1 ms | 0.536 |
+| Fixed 300 ms | −0.004 … +0.004 | **−0.015 … −0.0003** | **−51.9 … −10.9 ms** | 1.000 |
+
+The reviewer's suspicion is borne out, and in the direction opposite to the manuscript's claim.
+Against the **fixed 300 ms** baseline the policy buys **11–52 ms** of latency but *reduces*
+dysarthric recall by a small yet statistically detectable amount (interval entirely below zero);
+accuracy is indistinguishable. Against **fixed 200 ms** it is 48–89 ms *slower*, with higher
+dysarthric recall but no accuracy gain — and McNemar rejects equality (*p* = 0.0009) in favour of
+the fixed baseline being better on more discordant utterances (412 vs 321).
+
+We therefore **withdraw the claim that the entropy criterion improves sensitivity.** It does not.
+We report the trade-off it does provide — a modest mean-latency reduction against the 300 ms
+endpoint — and we state that no fixed baseline is beaten on accuracy at any operating point.
+
+As committed above, we do not read the non-significant comparisons as equivalence: with 15
+speaker clusters these intervals are wide, and the study is underpowered for small effects.
 
 ### R1.13 Evaluate posterior calibration before using entropy as a confidence measure
 
@@ -394,7 +504,25 @@ different folds. The revision adds a full calibration analysis **before** any po
   whether calibration actually improves the early-decision policy rather than assuming it does
   (R1-EV.4).
 
-See also R2.5. **Pending the frozen reruns.**
+See also R2.5.
+
+**Measured calibration (Transformer, pooled out-of-fold, 300 ms prefix).**
+
+| | NLL | Brier | 15-bin ECE |
+|---|---:|---:|---:|
+| Raw softmax | 1.393 | 0.446 | **0.429** |
+| Temperature-scaled | 0.837 | 0.303 | 0.212 |
+
+Fitted temperature: **11.23 ± 9.21** across folds. Reviewer 2's concern is confirmed
+emphatically — a raw ECE of 0.429 means the posteriors are almost meaningless as confidence
+values, and the temperature required to correct them is an order of magnitude above the
+well-calibrated value of 1, reaching the optimiser's upper bound of 20 in two folds.
+
+**Does calibration improve the early-decision policy? No — it removes it.** Correcting the
+overconfidence raises the forced-fallback rate from **8.9% to 64.2%**, and in three of five folds
+to 100% (R2.6). The apparent confidence that produced early decisions *was* the miscalibration.
+This is the single most consequential finding of the calibration analysis, and it is reported
+prominently rather than buried.
 
 ### R1.14 Cross-corpus validation on UA-Speech or another independent corpus
 
@@ -427,11 +555,30 @@ mean *decision* time is not a 264.6 ms *system* latency. The revision reports a
 | Policy computation | Entropy, stability tests, decision logic |
 | **Total end-to-end** | Sum as experienced by a caller |
 
-Each is reported with hardware identity, batch size, and warm/cold state, on CPU and on the
-available accelerator. We also make explicit that **observation time dominates** and is
-irreducible by any modelling choice — the pre-roll adds no waiting (R1.5), while onset
-confirmation adds a real, quantified delay after the acoustic onset. See R1.16 and R1-EV.9.
-**Pending the frozen reruns.**
+**Measured (Transformer, Apple M2, batch size 1, warm, decision at 200 ms, 100 repetitions).**
+
+| Component | CPU mean | MPS mean |
+|---|---:|---:|
+| Onset detection | 0.079 ms | 0.089 ms |
+| Prefix crop | 0.008 ms | 0.011 ms |
+| STFT + standardisation | 0.342 ms | 0.360 ms |
+| Input tensor preparation | 0.015 ms | 0.580 ms |
+| Model forward | 3.047 ms | 5.921 ms |
+| Logit → probability | 0.037 ms | 0.584 ms |
+| Policy computation | 0.120 ms | 0.140 ms |
+| **Total compute** | **3.68 ms** | **7.73 ms** |
+| Acoustic observation | 200 ms | 200 ms |
+| **Observation + compute** | **203.68 ms** | **207.73 ms** |
+
+Two practical points follow. **Acoustic observation dominates completely**: compute is 3.68 ms,
+or **1.8%** of end-to-end latency, and is irreducible by any modelling choice. And the
+accelerator is *slower* than the CPU at batch size 1 — 7.73 ms versus 3.68 ms — because kernel
+launch and transfer overheads exceed the cost of a 196k-parameter forward pass. For
+single-utterance deployment the CPU is the correct target, which the submitted manuscript did not
+establish.
+
+The input span at the 200 ms decision is **230 ms** (200 ms post-onset plus the 30 ms pre-roll),
+confirming the definition at R1.5. See R1.16 and R1-EV.9.
 
 ### R1.16 Report computational complexity, parameter count, memory, and real-time latency
 
@@ -441,11 +588,23 @@ during inference; multiply–accumulate/FLOP count **with the counting conventio
 explicitly**, since MAC-vs-FLOP conventions differ by a factor of two and are frequently
 reported ambiguously; and prefix-specific wall-clock inference time on stated hardware.
 
-Verified parameter counts: small CNN **23,538**; CNN–BiLSTM **69,354**; Transformer **196,594**;
-WavLM Base+ frozen-backbone classifier **1,538** trainable atop the pretrained encoder — for
-which we report the **total** parameter count as well, so the "lightweight" claim is not made on
-the basis of the trainable count alone. The "minimal-time" and "lightweight" claims are stated
-only where these measurements support them.
+**Measured (Apple M2 CPU, batch size 1, 300 ms prefix, THOP backend 0.1.1-2209072238).**
+
+| Model | Parameters | Serialized weights | MACs | FLOPs | Compute | Peak RSS increment |
+|---|---:|---:|---:|---:|---:|---:|
+| Small CNN | 23,538 | 100 KiB | 18.26 M | 36.52 M | 2.14 ms | 5.2 MB |
+| CNN–BiLSTM | 69,354 | 279 KiB | 44.70 M | 89.41 M | 3.69 ms | 14.9 MB |
+| Transformer | 196,594 | 783 KiB | 46.24 M | 92.49 M | 3.63 ms | 14.5 MB |
+
+**Counting convention, stated explicitly as requested:** THOP counts multiply–accumulates, and we
+report one MAC as two FLOPs. Where a FLOP backend is unavailable the pipeline records that fact
+rather than emitting an estimate.
+
+The "lightweight" claim is supported: all three models are under 1 MB serialized and run in under
+4 ms per decision on a laptop CPU. The "minimal-time" claim is supported only in the sense that
+*compute* is negligible; the binding constraint is the 200–300 ms of audio that must elapse first
+(R1.15), and we no longer imply otherwise. For the WavLM reference we report total as well as
+trainable parameter counts, so its 1,538 trainable head is not presented as the model's size.
 
 ### R1.17 Head-mounted microphones limit generalizability; investigate experimentally rather than acknowledge
 
@@ -480,7 +639,35 @@ fold's test set and misclassified throughout (R1.4, R1.7). The revision reports:
   the aggregate is visible rather than implicit.
 
 The false-positive audit (R3.10) is broken down by speaker for exactly this reason.
-**Pending the frozen reruns.**
+
+**Measured per-speaker results (Transformer, complete calibrated policy, pooled out-of-fold).**
+Each TORGO speaker holds a single class, so we report accuracy on that class together with the
+rate at which the speaker is predicted dysarthric:
+
+| Speaker | Class | Utt. | Share | Accuracy | Predicted dysarthric |
+|---|---|---:|---:|---:|---:|
+| MC02 | control | 464 | 5.7% | **1.7%** | 98.3% |
+| MC03 | control | 826 | 10.2% | 8.1% | 91.9% |
+| MC04 | control | 650 | 8.0% | 20.9% | 79.1% |
+| F04 | dysarthric | 246 | 3.0% | 24.0% | 24.0% |
+| FC01 | control | 163 | 2.0% | 24.5% | 75.5% |
+| F03 | dysarthric | 565 | 6.9% | 28.0% | 28.0% |
+| MC01 | control | 1,108 | 13.6% | 31.7% | 68.3% |
+| FC03 | control | 992 | 12.2% | 35.0% | 65.0% |
+| M03 | dysarthric | 417 | 5.1% | 43.6% | 43.6% |
+| M05 | dysarthric | 490 | 6.0% | 58.2% | 58.2% |
+| FC02 | control | 994 | 12.2% | 72.4% | 27.6% |
+| M02 | dysarthric | 404 | 5.0% | 84.2% | 84.2% |
+| M04 | dysarthric | 294 | 3.6% | 85.0% | 85.0% |
+| M01 | dysarthric | 386 | 4.7% | 90.2% | 90.2% |
+| F01 | dysarthric | 132 | 1.6% | 90.9% | 90.9% |
+
+The table shows something a pooled number cannot: the system is **not** dominated by a handful of
+outlier speakers — it carries a **global bias toward predicting dysarthric**. Six of seven control
+speakers are predicted dysarthric on 65–98% of their utterances, and the strong scores on
+dysarthric speakers (84–91%) are a *consequence* of the same bias rather than independent
+evidence of detection ability. Reporting only aggregate accuracy would have concealed this
+entirely.
 
 ### R1.19 Keep the distinction between detection and clinical diagnosis explicit
 
@@ -536,8 +723,13 @@ mutually consistent. That claim could not be substantiated. We regard this as th
 issue raised in the review, and it is the reason the revision is a rebuild rather than an
 amendment.
 
-**What the revision does.** Every table and figure is regenerated from **one canonical
-prediction ledger**. Per-prefix logits for every utterance are written to disk *before* any
+**What the revision does, and the verification.** Every table and figure is regenerated from
+**one canonical prediction ledger**. The check the submitted manuscript failed now passes: the
+regenerated pooled matrix (1,669 / 3,528 / 1,192 / 1,742) yields accuracy
+(1,669 + 1,742) / 8,131 = **41.95%**, matching the reported accuracy exactly, and the decision
+counts (200 ms 2,285; 250 ms 408; 300 ms 5,438) yield a mean decision time of **269.4 ms**, also
+matching exactly. Pooled and fold-mean estimands are additionally reported side by side and
+differ by 1.95 accuracy points (R1.6), so the distinction can no longer be lost. Per-prefix logits for every utterance are written to disk *before* any
 aggregate is computed; confusion matrices, accuracy, macro-F1, recall, latency, and
 forced-fallback rate are all derived from the **same decision rows**; and pooled out-of-fold and
 unweighted fold-mean ± SD are reported as **two separately captioned estimands** so they can
@@ -548,32 +740,30 @@ programmatically, rather than asserted in prose.
 
 ## Reviewer 1 — required experimental validation
 
-**R1-EV.1 — Recompute all metrics from one prediction file.** Done by construction. Accuracy,
-precision, recall, specificity, macro-F1, dysarthric recall, the confusion matrix, mean decision
-time, and forced-fallback rate are all computed from the same decision ledger rows. A validation
-step fails the pipeline if any two disagree.
+**R1-EV.1 — Recompute all metrics from one prediction file.** Done, and verified: the pooled
+confusion matrix reproduces the reported accuracy (41.95%) and the decision counts reproduce the
+reported mean decision time (269.4 ms) exactly. See R1.20.
 
-**R1-EV.2 — Five-fold statistical report.** Per fold: accuracy, macro-F1, dysarthric recall, mean
-decision time, forced-fallback rate; plus mean, sample SD, and speaker-clustered bootstrap 95%
-confidence intervals, with pooled out-of-fold values reported separately (R1.6, R1.7).
+**R1-EV.2 — Five-fold statistical report.** Delivered. Per-fold accuracy at fixed 300 ms is
+48.0 / 24.4 / 39.3 / 75.3 / 32.4%; fold mean ± SD is 43.90% ± 19.58; pooled out-of-fold is 41.95%.
+Speaker-clustered 95% intervals are at R1.7 (accuracy 0.304–0.552).
 
-**R1-EV.3 — Entropy-threshold sensitivity.** The full validation response surface over the
-14 × 11 (θ, ε) grid is reported, together with test performance at the validation-selected
-values only. We do not re-tune on test, and we show how flat or peaked the selection surface is
-so the reader can judge how load-bearing the selected θ is.
+**R1-EV.3 — Entropy-threshold sensitivity.** Delivered over the full 14 × 11 grid. The outcome is
+bimodal rather than smoothly sensitive: two folds select θ = 0.95 / ε = 0.20 and decide early;
+three select θ = 0.30 / ε = 0.00 and never decide early (R2.6). No test re-tuning.
 
-**R1-EV.4 — Calibration comparison.** Uncalibrated softmax versus temperature-scaled posteriors,
-compared on NLL, Brier, 15-bin ECE, and reliability diagrams, and then on downstream policy
-performance — so the question "does calibration improve the early-decision policy?" is answered
-empirically rather than assumed (R1.13, R2.5).
+**R1-EV.4 — Calibration comparison.** Delivered, and the answer is negative. Raw ECE 0.429 falls
+to 0.212 under temperature scaling (T = 11.23 ± 9.21), but the forced-fallback rate rises from
+8.9% to 64.2%: calibration removes the early decisions rather than improving them (R1.13, R2.5).
 
-**R1-EV.5 — Policy-component ablation.** Fixed 300 ms; entropy only; entropy + class stability;
-entropy + entropy-value stability; complete policy; plus a `max_softmax_confidence` arm
-(R1.1). This establishes whether each condition in Equation 4 contributes.
+**R1-EV.5 — Policy-component ablation.** Delivered (table at R1.1). No component of Equation 4
+yields a performance gain; all variants fall within 0.4 points of each other and at or below the
+fixed 200 ms baseline, and the `max_softmax_confidence` arm matches `entropy_only` exactly.
 
-**R1-EV.6 — Results at 200/250/300 ms with a standardized earliness metric.** Reported per
-prefix, with the accuracy–earliness curve, consumed fraction, timeliness, and prespecified
-harmonic-mean trade-off metrics defined explicitly (R1.11).
+**R1-EV.6 — Results at 200/250/300 ms with a standardized earliness metric.** Delivered: pooled
+accuracy 43.07 / 42.11 / 41.94% at 200 / 250 / 300 ms, mean decision time 269.4 ms, consumed
+fraction 0.898, timeliness 0.102. The accuracy–earliness curve is flat to slightly negative
+(R1.11).
 
 **R1-EV.7 — Cross-corpus transfer.** **Not completed.** See R1.14: this is a new-data experiment
 outside the revision's scope. The claim is narrowed to TORGO head-mounted-microphone speech and
@@ -611,8 +801,13 @@ per-fold values are given at R2.6.
 On **sensitivity**, which the submitted manuscript did not address at all: we report the complete
 validation response surface over the grid, so the reader can see whether performance sits on a
 plateau or a narrow ridge. If the surface is flat, the method is robust but θ is less meaningful
-than claimed; if it is peaked, θ is load-bearing and must be tuned per deployment. Either finding
-is reported as observed. **Pending the frozen reruns.**
+than claimed; if it is peaked, θ is load-bearing and must be tuned per deployment.
+
+**Observed:** the selection is bimodal rather than smoothly sensitive. Two folds select the
+maximum θ = 0.95 with ε = 0.20 and decide early on most utterances; three folds select the
+minimum admissible θ = 0.30 with ε = 0.00 and never decide early at all (R2.6). The determining
+factor is not a finely-tuned threshold but whether the fold's calibrated posteriors are ever
+confident enough to pass the gate. Reported per fold with the full response surface.
 
 ### R2.2 Inadequate background in early time-series classification, uncertainty-based speech processing, and short-segment pathological speech; what is theoretically unique?
 
@@ -687,7 +882,24 @@ log-likelihood, and Brier score, **before and after** temperature scaling, per f
 is fitted only on the validation calibration partition, never on test. We additionally report
 policy performance with and without calibration, so the reader sees whether calibration actually
 helps the decision rule rather than assuming it must. Full detail at R1.13/R1-EV.4.
-**Pending the frozen reruns.**
+
+**Measured calibration (Transformer, pooled out-of-fold, 300 ms prefix).**
+
+| | NLL | Brier | 15-bin ECE |
+|---|---:|---:|---:|
+| Raw softmax | 1.393 | 0.446 | **0.429** |
+| Temperature-scaled | 0.837 | 0.303 | 0.212 |
+
+Fitted temperature: **11.23 ± 9.21** across folds. Reviewer 2's concern is confirmed
+emphatically — a raw ECE of 0.429 means the posteriors are almost meaningless as confidence
+values, and the temperature required to correct them is an order of magnitude above the
+well-calibrated value of 1, reaching the optimiser's upper bound of 20 in two folds.
+
+**Does calibration improve the early-decision policy? No — it removes it.** Correcting the
+overconfidence raises the forced-fallback rate from **8.9% to 64.2%**, and in three of five folds
+to 100% (R2.6). The apparent confidence that produced early decisions *was* the miscalibration.
+This is the single most consequential finding of the calibration analysis, and it is reported
+prominently rather than buried.
 
 ### R2.6 Publish the exact tuned θ and ε obtained on the validation splits
 
@@ -699,7 +911,24 @@ For transparency about what changed: the submitted manuscript reported fold thre
 the original selection code and validation predictions no longer exist, we cannot verify how
 those values were obtained, and they are therefore **superseded rather than re-used**. The
 revision re-selects θ and ε from scratch under the explicit criterion at R1.3, and reports the
-resulting per-fold values with the selection surface. **Pending the frozen reruns.**
+resulting per-fold values with the selection surface.
+
+**Selected values (Transformer, complete calibrated policy).** Chosen on the policy-tuning
+partition of validation speakers only:
+
+| Fold | θ | ε | Validation macro-F1 | Fixed-300 validation macro-F1 | Mean decision time | Forced fallback |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0 | 0.95 | 0.20 | 0.786 | 0.787 | 212.6 ms | 6.9% |
+| 1 | 0.30 | 0.00 | 0.200 | 0.200 | 300.0 ms | 100% |
+| 2 | 0.95 | 0.20 | 0.664 | 0.655 | 228.5 ms | 16.8% |
+| 3 | 0.30 | 0.00 | 0.466 | 0.466 | 300.0 ms | 100% |
+| 4 | 0.30 | 0.00 | 0.538 | 0.538 | 300.0 ms | 100% |
+
+We draw the reviewer's attention to folds 1, 3 and 4, where the constrained search selects the
+**lowest admissible θ with ε = 0** and the policy then never fires early: every utterance falls
+back to 300 ms. After calibration the posteriors in those folds are never confident enough to
+satisfy the entropy gate. The early-decision mechanism is therefore inactive in three of five
+folds, which we report rather than average away.
 
 ### R2.7 Five model families are claimed but only three appear in the results
 
@@ -828,7 +1057,8 @@ paired discordant-pair testing together with speaker-clustered paired bootstrap 
 We use speaker-clustered resampling rather than utterance-level tests because the 8,131
 utterances are not independent — they come from 15 speakers with 132 to 1,108 utterances each —
 and treating them as independent would substantially overstate significance. We also commit not
-to read a non-significant result as equivalence. **Pending the frozen reruns.**
+to read a non-significant result as equivalence. The measured comparison against each fixed
+baseline is given at R1.12, and the per-speaker table at R1.18.
 
 ### R2.12 The early-decision benefit is exaggerated by comparing against the mean of fixed durations rather than the best fixed baseline
 
@@ -1035,8 +1265,8 @@ predictions" and did not define the search or the objective. The revision specif
   parameters, with no retuning.
 
 The submitted manuscript reported fold thresholds of 0.95, 0.90, 0.85, 0.85, 0.90 with a fixed
-ε = 0.08 under an objective that was never defined; those values are superseded. **The new
-fold-specific selected values are pending completion of the frozen reruns.**
+ε = 0.08 under an objective that was never defined; those values are superseded. The
+newly selected per-fold values are given at R2.6.
 
 The sensitivity surface requested by Reviewer 2 is at R2.1, and the per-fold selected values
 at R2.6.
@@ -1071,8 +1301,9 @@ We do not merely concede this point in the text; we test it. The revised policy 
 includes a **`max_softmax_confidence`** arm alongside `entropy_only`, `entropy_class_stability`,
 `entropy_value_stability`, `full_policy`, and the `fixed_300` baseline, so the reader can see
 directly how much of the result is attributable to the uncertainty statistic and how much to the
-stability conditions and the constrained selection. **These ablation results are pending
-completion of the frozen reruns.**
+stability conditions and the constrained selection. The measured ablation is given at R1.1: the
+`max_softmax_confidence` arm reproduces `entropy_only` to every digit, and no component of
+Equation 4 produces a performance gain.
 
 ### R3.8 What is the value of Δ in Equation (4), and how is the previous prediction handled at the first candidate decision point of 200 ms?
 
@@ -1150,8 +1381,29 @@ submitted analysis had no way to detect or exclude. Representative spectrograms 
 only after the taxonomy is fixed, so that illustrative examples cannot be selected to fit a
 narrative.
 
-**The audit results are pending completion of the frozen reruns** and will appear in the revised
-§5. We would rather give the reviewer a defensible answer late than a plausible one now.
+**Third, the answer.** With the matrix regenerated, the question can be answered directly. The
+pooled out-of-fold confusion matrix for the Transformer under the complete calibrated policy is:
+
+| | Predicted control | Predicted dysarthric | Row total |
+|---|---:|---:|---:|
+| True control | 1,669 | **3,528** | 5,197 |
+| True dysarthric | 1,192 | 1,742 | 2,934 |
+
+Accuracy computed from this matrix is (1,669 + 1,742) / 8,131 = **41.95%**, which reproduces the
+reported accuracy exactly, and the decision counts give a mean decision time of 269.4 ms, again
+exactly. Table, figure, and latency counts are now consistent by construction.
+
+The false-positive rate is **67.9%** (3,528 of 5,197 control utterances). The per-speaker
+breakdown at R1.18 identifies the cause, and it is not a small subset of speakers or a
+recording-condition artefact: the classifier carries a **global bias toward predicting
+dysarthric**, labelling six of seven control speakers dysarthric on 65–98% of their utterances.
+Its apparently strong dysarthric recall is the same bias seen from the other side.
+
+We therefore do not attribute the false positives to speaker-specific noise, prompt type, or
+onset error. The honest explanation is that the classifier does not separate the two classes on
+held-out speakers at this prefix length; the prespecified breakdown by prompt type, duration,
+onset error, entropy, and SNR proxy is reported in the revised §5 for completeness, but none of
+those factors accounts for an error rate of this magnitude.
 
 ---
 ## Summary of changes to the manuscript

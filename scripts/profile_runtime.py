@@ -38,7 +38,14 @@ def _load_checkpoint(model: torch.nn.Module, path: Path | None) -> None:
     if path is None:
         return
     value = torch.load(path, map_location="cpu", weights_only=True)
-    state_dict = value.get("state_dict", value) if isinstance(value, dict) else value
+    state_dict = value
+    if isinstance(value, dict):
+        # Training writes the weights under "model_state_dict" alongside optimizer state,
+        # provenance hashes, and metadata; "state_dict" is accepted for bare exports.
+        for key in ("model_state_dict", "state_dict"):
+            if key in value:
+                state_dict = value[key]
+                break
     if not isinstance(state_dict, dict):
         raise TypeError("Checkpoint must contain a state dictionary")
     model.load_state_dict(state_dict, strict=True)
