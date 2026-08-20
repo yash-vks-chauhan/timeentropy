@@ -292,7 +292,28 @@ latency. This distinction is now explicit wherever a latency figure appears (see
 A **condition-matched zero-pre-roll ablation** is reported, with a model retrained from scratch
 under its own onset handling, its own temperature, and its own policy selection, so the
 comparison is not contaminated by reusing a checkpoint trained under a different input
-definition. **Pending the frozen reruns.**
+definition.
+
+**Measured (Transformer, condition-matched retraining, validation speaker-balanced macro-F1).**
+The zero-pre-roll condition was retrained from scratch with its own onset handling, temperature,
+and policy selection:
+
+| Fold | 0 ms pre-roll | 30 ms pre-roll | Difference |
+|---:|---:|---:|---:|
+| 0 | 0.6939 | 0.6824 | +0.0115 |
+| 1 | 0.3953 | 0.3669 | +0.0283 |
+| 2 | 0.6542 | 0.6719 | −0.0177 |
+| 3 | 0.4443 | 0.4863 | −0.0420 |
+| 4 | 0.6580 | 0.6910 | −0.0330 |
+| **Mean** | **0.5691 ± 0.1383** | **0.5797 ± 0.1462** | **−0.0106** |
+
+**The pre-roll has no material effect.** The mean difference of 0.011 favours retaining it, but
+the sign flips across folds (two of five favour removing it) and the effect is an order of
+magnitude smaller than the between-fold standard deviation of 0.14. We therefore **withdraw the
+manuscript's justification** that the pre-roll captures discriminative articulatory information:
+our data do not support it. We retain the 30 ms pre-roll because it costs no latency and is
+principled for an energy-threshold detector that necessarily anchors after low-energy onsets, and
+we now say exactly that rather than claiming a performance benefit.
 
 ### R1.6 Are five-fold results pooled or averaged? Report fold-wise performance
 
@@ -416,7 +437,14 @@ comparison isolates representation rather than protocol.
 
 This baseline replaces the withdrawn EfficientNet-lite row (R2.7/R3.4). We consider a
 reproducible modern reference more informative than an unreproducible historical one — including
-if it beats our compact models, which we will report as found. **Pending the frozen reruns.**
+if it beats our compact models, which we will report as found.
+
+**Status: specified and implemented, not yet executed.** The loader, revision pinning, masking,
+pooling, and frozen-backbone head are implemented and unit-tested, and the run is defined in the
+frozen matrix, but the reference has not been run. We state this plainly rather than presenting a
+specification as a result. Given the compact models perform at or below the majority-class
+baseline on this corpus (R1.6), a modern pretrained representation is the most informative
+remaining experiment, and it is listed first in the revision's outstanding work.
 ### R1.11 Report an explicit area-under-the-accuracy–earliness curve or standardized early-classification metric
 
 **Author response.** Accepted. Mean latency alone is a poor summary — it hides the distribution
@@ -770,9 +798,10 @@ outside the revision's scope. The claim is narrowed to TORGO head-mounted-microp
 the experiment is listed as future work. We do not present a substitute.
 
 **R1-EV.8 — Robustness under noise, SNR, onset error, microphone and speaker variation.**
-**Partly completed.** Additive white Gaussian noise at 20/10/0 dB SNR and onset shifts of
-−50/−30/−10/0/+10/+30/+50 ms are prespecified and run, together with a causal-versus-offline
-onset comparison and a zero-versus-30 ms pre-roll ablation. Per-speaker results address speaker
+**Partly completed and reported at R2.4.** All 11 prespecified conditions were run across five
+folds (55 evaluations). Early onset anchoring costs up to 6.7 accuracy points; moderate additive
+noise *improves* accuracy by up to 2.6 points, which we report as evidence against robustness
+rather than for it. The zero-versus-30 ms pre-roll ablation is at R1.5. Per-speaker results address speaker
 and severity variation to the extent TORGO metadata supports (R2.8). **Different microphone
 conditions and continuous conversational speech are not covered** — TORGO's head-mounted
 subset does not contain them — and are stated as limitations (R1.17).
@@ -871,7 +900,36 @@ figures and disposition at R1.4 and in `docs/onset_finding.md`.
 **detector failures** with a registered fallback anchor at sample 0, counted and reported rather
 than dropped. Localization error is quantified against manual annotation on a prespecified
 stratified subset (signed and absolute error, plus failure rate), and the complete policy is
-re-run under onset perturbations of −50 to +50 ms. **Pending the frozen reruns.**
+re-run under onset perturbations of −50 to +50 ms.
+
+**Measured (Transformer, pooled out-of-fold, calibrated policy; temperature and θ/ε fixed on the
+clean validation partitions and applied unchanged to every perturbed condition).**
+
+| Condition | Accuracy | Macro-F1 | Dysarthric recall | vs clean |
+|---|---:|---:|---:|---:|
+| Clean reference | 41.95% | 41.95% | 59.37% | — |
+| White noise, 20 dB SNR | 43.09% | 43.09% | 60.26% | +1.14 |
+| White noise, 10 dB SNR | 44.57% | 44.24% | 72.49% | +2.62 |
+| White noise, 0 dB SNR | 38.05% | 35.82% | 78.56% | −3.90 |
+| Onset shift −50 ms | 35.84% | 33.60% | 75.12% | −6.11 |
+| Onset shift −30 ms | 35.27% | 33.55% | 71.17% | −6.68 |
+| Onset shift −10 ms | 38.89% | 38.61% | 63.26% | −3.06 |
+| Onset shift 0 ms | 41.95% | 41.95% | 59.37% | +0.00 |
+| Onset shift +10 ms | 43.44% | 43.39% | 56.00% | +1.49 |
+| Onset shift +30 ms | 41.63% | 41.60% | 54.74% | −0.32 |
+| Onset shift +50 ms | 40.97% | 40.96% | 55.11% | −0.98 |
+
+The zero-shift condition reproduces the clean reference **exactly**, which is the numerical audit
+the protocol requires and confirms the perturbation machinery is inert at offset zero.
+
+Two results deserve the reviewer's attention, and neither flatters the method.
+**Onset error is asymmetric and costly**: anchoring 30–50 ms *early* costs 6.1–6.7 accuracy
+points, roughly three times the effect of anchoring the same distance late, because an early
+anchor fills the prefix with pre-onset room tone. This is a direct quantification of the concern
+in R1.4 that onset-localisation error propagates into classification.
+**Moderate additive noise *improves* accuracy** — +2.6 points at 10 dB SNR. A system extracting
+genuine speech structure should not improve when noise is added. We report this as evidence
+against the robustness of what the model has learned rather than as a robustness result.
 
 ### R2.5 Show whether posteriors are calibrated (ECE, reliability diagrams)
 
@@ -1163,8 +1221,9 @@ On the effect on performance, we do not assert a direction from the old results.
 reports a **condition-matched ablation** in which a zero-pre-roll model is *retrained* from
 scratch with its own onset handling, its own temperature, and its own policy selection, so that
 the comparison is not contaminated by reusing a checkpoint trained under a different input
-definition. **This value is pending completion of the frozen reruns and will be reported in the
-revised manuscript.**
+definition. The measured result is at R1.5: the pre-roll makes no material difference
+(mean −0.011 balanced macro-F1, sign varying by fold, against a between-fold SD of 0.14), so the
+manuscript's articulatory-information justification is withdrawn.
 
 See also R1.5, where the same definition is stated, and R1.15, where the pre-roll's zero
 contribution to system latency is separated from the onset-confirmation delay, which is not zero.
@@ -1441,6 +1500,17 @@ those factors accounts for an error rate of this magnitude.
 | Diagnostic language replaced with "utterance-level dysarthric-speech classification" | R1.19 | throughout |
 | Generalization narrowed to head-mounted-microphone TORGO; cross-corpus and far-field stated as limitations | R1.14, R1.17, R1-EV.7 | §1, §5.4, §6 |
 
+## Provenance note
+
+All results come from one canonical out-of-fold ledger. The primary fold runs were produced at
+commit `98e5953`; the test-time robustness evaluations consumed those checkpoints at a later
+commit, and the difference is recorded in the execution plan rather than elided. No file under
+`configs/`, `training/`, `models/`, `data/`, `signal/` or the fold-splitting module differs
+between those commits, so the checkpoints are identical to ones the later code would produce; the
+intervening changes are to reporting, documentation, tests, and a profiling script. Every
+artifact records its own commit, configuration content hash, model-architecture hash, and
+manifest hashes.
+
 ## Items we could not complete
 
 We list these separately rather than leaving them implied:
@@ -1448,7 +1518,7 @@ We list these separately rather than leaving them implied:
 | Request | Status | Reason |
 |---|---|---|
 | Cross-corpus test on UA-Speech or equivalent (R1.14, R1-EV.7) | **Not completed** | New-data experiment requiring separate access, task mapping, and protocol. Claim narrowed; listed as future work. No substitute offered. |
-| Modern pretrained speech baseline (R1.10) | **Specified, not yet run** | WavLM Base+ is fully specified and pinned to an immutable revision, and the loader is implemented and tested, but the reference has not been executed. Reported as specified-and-pending rather than presented as a result. |
+| Modern pretrained speech baseline (R1.10) | **Specified and implemented, not yet run** | WavLM Base+ is pinned to an immutable revision and the loader is implemented and unit-tested, but the reference has not been executed. Reported as such rather than presented as a result; it is the first item of outstanding work. |
 | Far-field / mobile / conversational microphone validation (R1.17, R1-EV.8) | **Not completed** | Requires recordings TORGO's head-mounted subset does not contain. Additive noise is reported but explicitly not presented as a far-field simulation. |
 | Dysarthria severity and neurological etiology per speaker (R2.8) | **Partially completed** | Not present in the surviving corpus index. Reported only where authoritative TORGO documentation supports it; otherwise labelled not available rather than imputed. |
 | Exact historical EfficientNet-lite and CNN-GRU results (R2.7, R3.4) | **Withdrawn** | No variant identifier, layer definition, checkpoint, or prediction file survives. Withdrawn rather than reconstructed. |
