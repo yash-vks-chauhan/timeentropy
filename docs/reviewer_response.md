@@ -58,7 +58,6 @@ to the revised typeset manuscript.
 > manuscript's values; the reasons are set out at R1.4 and R1.20.
 
 
----
 ## Reviewer 1 — comments with author response
 
 ### R1.1 Novelty should be distinguished from conventional confidence-based early classification and entropy-based rejection
@@ -764,7 +763,6 @@ unweighted fold-mean ± SD are reported as **two separately captioned estimands*
 never again be silently interchanged. Consistency is enforced by construction and checked
 programmatically, rather than asserted in prose.
 
----
 
 ## Reviewer 1 — required experimental validation
 
@@ -812,7 +810,6 @@ time, and total end-to-end latency, reported as separate components (R1.15, R1.1
 reviewer's framing directly in the text: **mean decision time is not system latency**, and the
 two are now reported as distinct quantities.
 
----
 ## Reviewer 2 — comments with author response
 
 We thank the reviewer for the accurate summary of the system and for identifying that roughly
@@ -1145,7 +1142,6 @@ benefit is a modest reduction in *mean* decision time, not a reduction in worst-
 which remains 300 ms by construction. Whether that trade is worthwhile is left to the reader with
 the numbers needed to judge it, rather than asserted.
 
----
 ## Reviewer 3 — comments with author response
 
 Several of these points were raised independently by Reviewers 1 and 2. Each is answered in full
@@ -1464,7 +1460,6 @@ held-out speakers at this prefix length; the prespecified breakdown by prompt ty
 onset error, entropy, and SNR proxy is reported in the revised §5 for completeness, but none of
 those factors accounts for an error rate of this magnitude.
 
----
 ## Summary of changes to the manuscript
 
 | Change | Prompted by | Location |
