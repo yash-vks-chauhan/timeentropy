@@ -275,6 +275,10 @@ We report this first because every downstream result depends on it. A label-free
 | **`causal_noise_floor`** | **4.7%** | 1060 ms | **0.1713** | **3.5%** | **+25.3 dB** |
 | `recovered_offline_peak` (earlier version) | **45.0%** | 40 ms | 0.0149 | **27.5%** | +15.2 dB |
 
+![Figure 1](artifacts/figures/figure_onset_detection.png)
+
+**Figure 1.** Onset-detector failure by thresholding rule, 600 utterances. "Onset returned at sample 0" means the detector never located speech; "prefix contains room tone" means the resulting 300 ms onset-aligned crop has an RMS below 0.01. The peak-relative rule is the one used in the earlier version of this work.
+
 The mechanism is a mismatch of scale. An absolute RMS floor of 0.003 corresponds to −50 dBFS, whereas measured room tone in these head-mounted recordings lies between −22 and −41 dBFS — above the threshold. The first analysis frame therefore already exceeds it, the two-frame criterion is satisfied immediately, and the detector returns sample zero. For speaker MC04, room tone holds near −41 dBFS for roughly 1.4 s before speech reaches −9 dBFS, and all ten of the first ten frames clear the threshold. The failure is speaker-dependent because it depends on recording level: speaker M05's recordings open directly on speech, where an anchor at sample zero is approximately correct.
 
 The consequence is not subtle. A fold trained under the fixed-threshold detector scored 77.4–82.2% across its three validation partitions and 52.9% on test against a 51.9% majority baseline; control speaker MC04 — 650 utterances, 38% of that fold's test set, every onset at sample zero — was classified dysarthric on 100% of its utterances. **This affects the earlier version of this work**, whose peak-relative rule fires at sample zero on approximately 45% of utterances, leaving about 27.5% of nominal onset-aligned prefixes containing room tone rather than speech. We cannot quantify the precise effect on the previously reported numbers, because the original predictions no longer exist, but a classifier trained and evaluated on prefixes that are substantially silence is not measuring what was claimed.
@@ -322,6 +326,10 @@ WavLM roughly halves the between-fold standard deviation relative to the Transfo
 
 **Statistical caution.** The speaker-clustered 95% interval for WavLM's balanced accuracy is 47.9–70.8%, which still **includes 50%**. With fifteen speakers this design cannot establish the advantage at conventional confidence, and we do not claim that it does. What we report is a consistent direction: WavLM is above chance on four of five folds, ahead of every compact model on the pooled estimate, more stable across folds, better calibrated, and the only model that improves with additional context. The corresponding interval for the Transformer is 32.5–58.8%.
 
+![Figure 2](artifacts/figures/figure_accuracy_earliness.png)
+
+**Figure 2.** Balanced accuracy against post-onset observation time. Only the pretrained representation exceeds chance, and only it improves as more of the utterance becomes available.
+
 **Table 11.** Per-fold accuracy at fixed 300 ms, showing the dominant source of variance.
 
 | Model | Fold 0 | Fold 1 | Fold 2 | Fold 3 | Fold 4 | Range |
@@ -331,6 +339,10 @@ WavLM roughly halves the between-fold standard deviation relative to the Transfo
 | Transformer | 48.0% | 24.4% | 39.3% | 75.3% | 32.4% | 50.9 pts |
 
 Per-fold accuracy varies by up to 55 percentage points within a single architecture. By contrast, on fold 1 the three architectures — spanning 23,538 to 196,594 parameters, an eightfold range — produce validation balanced macro-F1 of 0.3795, 0.3814 and 0.3669, a spread of 0.015. **Between-fold variance exceeds between-model variance by more than an order of magnitude.** Any ranking of these architectures on this corpus is measuring fold assignment, not model capability. This is the strongest methodological finding of the study and it applies retrospectively to the earlier version's comparison table.
+
+![Figure 3](artifacts/figures/figure_fold_variance.png)
+
+**Figure 3.** Per-fold balanced accuracy at 300 ms; each point is one fold, the bar is the model's mean. The vertical spread within a model exceeds the separation between the three compact models, which is why ranking them on this corpus is not meaningful.
 
 Validation performance also fails to predict test performance: the small CNN achieved higher validation balanced macro-F1 than the CNN–BiLSTM on fold 0 (0.7367 versus 0.6894) but lower test accuracy (46.8% versus 60.9%).
 
@@ -351,6 +363,10 @@ The fitted temperature is **11.23 ± 9.21** across folds, reaching the optimizer
 |---|---:|---:|---:|
 | Transformer | 0.4291 | 0.2117 | 11.23 |
 | **WavLM Base+** | **0.0445** | 0.0593 | 5.45 |
+
+![Figure 4](artifacts/figures/figure_reliability.png)
+
+**Figure 4.** Reliability diagrams at the 300 ms prefix, pooled out-of-fold. Points on the diagonal indicate that predicted confidence matches observed accuracy. The Transformer sits far below the diagonal — systematically overconfident — and temperature scaling only partly corrects it; the pretrained representation is close to the diagonal untouched.
 
 The contrast is instructive. WavLM's frozen representation with a linear head is **well calibrated with no correction at all** — an expected calibration error of 0.044, an order of magnitude below the Transformer's — and temperature scaling makes it slightly *worse* rather than better. Severe overconfidence is therefore not an inherent property of this task or of short prefixes. It is a symptom of the compact models fitting their training speakers, and it disappears when the representation generalizes.
 
@@ -422,6 +438,10 @@ Temperature and the policy parameters are fitted once on the clean validation pa
 | Onset shift +30 ms | 41.63% | 41.60% | 54.74% | −0.32 |
 | Onset shift +50 ms | 40.97% | 40.96% | 55.11% | −0.98 |
 
+![Figure 7](artifacts/figures/figure_robustness.png)
+
+**Figure 7.** Change in pooled accuracy under each prespecified perturbation, relative to the clean reference. Onset error is asymmetric: anchoring early costs far more than anchoring late. Moderate additive noise improves measured accuracy.
+
 The zero-shift condition reproduces the clean reference exactly, confirming that the perturbation machinery is inert at offset zero.
 
 **Onset error is asymmetric and costly.** Anchoring 30–50 ms *early* costs 6.1–6.7 accuracy points, roughly three times the effect of anchoring the same distance late, because an early anchor fills the prefix with pre-onset room tone. This quantifies the sensitivity that makes the Section 5.1 detector failure consequential.
@@ -439,6 +459,10 @@ The zero-shift condition reproduces the clean reference exactly, confirming that
 | **Total** | 2,861 | 5,270 | **8,131** |
 
 Accuracy computed from this matrix is (1,669 + 1,742) / 8,131 = **41.95%**, reproducing the reported value exactly, and the decision counts reproduce the reported mean decision time of 269.4 ms exactly. This mutual consistency is enforced by construction, which was the specific failure identified in the earlier version.
+
+![Figure 5](artifacts/figures/figure_confusion.png)
+
+**Figure 5.** Pooled out-of-fold confusion matrices under the complete calibrated policy, shaded by row proportion. The Transformer's mass sits in the false-positive cell; the pretrained representation's sits on the diagonal.
 
 The false-positive rate is **67.9%**: two-thirds of control utterances are labelled dysarthric.
 
@@ -461,6 +485,10 @@ The false-positive rate is **67.9%**: two-thirds of control utterances are label
 | M04 | dysarthric | 294 | 3.6% | 85.0% | 85.0% |
 | M01 | dysarthric | 386 | 4.7% | 90.2% | 90.2% |
 | F01 | dysarthric | 132 | 1.6% | 90.9% | 90.9% |
+
+![Figure 6](artifacts/figures/figure_speaker_bias.png)
+
+**Figure 6.** Proportion of each speaker's utterances predicted dysarthric by the Transformer, with speakers grouped by their true class. A system separating the classes would place control speakers left of the 50% line and dysarthric speakers right of it; six of seven control speakers fall on the wrong side.
 
 The table shows what a pooled number cannot. The system is **not** dominated by a few outlier speakers: it carries a global bias toward predicting dysarthric. Six of seven control speakers are labelled dysarthric on 65–98% of their utterances, and the apparently strong scores on dysarthric speakers (84–91%) are a consequence of that same bias rather than independent evidence of detection ability. We therefore do not attribute the false positives to speaker-specific noise, prompt type, or onset error; the honest explanation is that the classifier does not separate the classes on held-out speakers at this prefix length.
 

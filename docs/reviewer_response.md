@@ -487,7 +487,8 @@ calibrated policy: **200 ms 2,285 (28.1%), 250 ms 408 (5.0%), 300 ms 5,438 (66.9
 5,224 are forced fallbacks and 214 are accepted at the endpoint. Mean decision time
 **269.4 ms**, consumed fraction 0.898, timeliness 0.102.
 
-The accuracy–earliness curve is flat to slightly negative: pooled accuracy is 43.07% at fixed
+The accuracy–earliness curve (revised manuscript Figure 2) is flat to slightly negative for the
+compact models and rising for the pretrained reference: pooled accuracy is 43.07% at fixed
 200 ms, 42.11% at 250 ms, and 41.94% at 300 ms. Waiting longer does not help this system, so the
 harmonic-mean trade-off metrics are maximised at the *shortest* prefix rather than by the adaptive
 policy. We report that as found.
@@ -546,7 +547,7 @@ different folds. The revision adds a full calibration analysis **before** any po
 
 - **raw versus temperature-scaled** negative log-likelihood, Brier score, and **15-bin expected
   calibration error**;
-- **reliability diagrams** per fold;
+- **reliability diagrams** (revised manuscript Figure 4; per-fold bins in the report tables);
 - scalar temperature fitted **only** on the validation calibration partition (25% of validation
   speakers), never on test rows, with the fitted value reported per fold;
 - policy performance reported **both** with and without calibration, so the reader can see
@@ -810,8 +811,8 @@ fixed 200 ms baseline, and the `max_softmax_confidence` arm matches `entropy_onl
 
 **R1-EV.6 — Results at 200/250/300 ms with a standardized earliness metric.** Delivered: pooled
 accuracy 43.07 / 42.11 / 41.94% at 200 / 250 / 300 ms, mean decision time 269.4 ms, consumed
-fraction 0.898, timeliness 0.102. The accuracy–earliness curve is flat to slightly negative
-(R1.11).
+fraction 0.898, timeliness 0.102. The accuracy–earliness curve is flat to slightly negative for
+the compact models and rising for the pretrained reference (revised manuscript Figure 2) (R1.11).
 
 **R1-EV.7 — Cross-corpus transfer.** **Not completed.** See R1.14: this is a new-data experiment
 outside the revision's scope. The claim is narrowed to TORGO head-mounted-microphone speech and
