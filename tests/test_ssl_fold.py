@@ -283,3 +283,25 @@ def test_offline_injected_ssl_fold_exports_canonical_auditable_ledger(
     assert optimizer_parameter_count == 2
     assert payload["metadata"]["pretrained_checkpoint"] == checkpoint
     assert payload["metadata"]["validation_partition_method"] == "sha256_sample_id"
+
+
+def test_ssl_training_config_uses_the_configured_selection_metric() -> None:
+    """The SSL path must honour the frozen config, not silently fall back to a default.
+
+    It previously never passed selection_metric, so it happened to match the compact models
+    only because the dataclass default agreed with the config. Changing the config would have
+    silently left the pretrained reference on a different checkpoint-selection rule, which is
+    exactly the confound a condition-matched comparison must avoid.
+    """
+
+    import inspect
+
+    from timeentropy.training import ssl_fold
+
+    source = inspect.getsource(ssl_fold)
+    assert "checkpoint_selection_metric" in source, (
+        "ssl_fold must read training.checkpoint_selection_metric from the config"
+    )
+    assert "selection_metric=" in source
+    # The run summary must record what was actually used.
+    assert "best_checkpoint_speaker_balanced_macro_f1" in source

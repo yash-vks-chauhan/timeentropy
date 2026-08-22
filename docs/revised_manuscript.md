@@ -14,9 +14,9 @@ ORCID: Suresh Kumar Chelliah — 0009-0006-5641-8344; Arivazhagan N — 0000-000
 
 Automatic dysarthric speech detection could support rapid screening and assistive communication, and a natural question is how early after speech onset a decision can be made. This paper asks whether dysarthric-versus-control speech can be detected from 200–300 ms speech-onset prefixes of TORGO head-mounted-microphone recordings, and whether posterior entropy can reduce decision time within that window. In responding to reviewer scrutiny of an earlier version of this work, we found that its reported confusion matrix did not reconcile with its reported accuracy, and that the original code and predictions no longer existed. We therefore rebuilt the entire experiment as a frozen, version-controlled pipeline and report what it yields.
 
-Three results follow. First, the speech-onset detector used in the earlier version fails: because its threshold falls below the recordings' room tone, it returns an onset at sample zero for approximately 45% of utterances, so a nominal "onset-aligned" prefix frequently contains no speech. Second, with a corrected level-adaptive causal detector and strictly speaker-independent five-fold evaluation, none of three compact architectures exceeds the majority-class baseline: pooled out-of-fold accuracy is 44.32% (small CNN), 46.61% (CNN–BiLSTM) and 41.94% (Transformer) against a 63.92% constant-class baseline, with per-fold accuracy ranging from 24.4% to 75.3%. Third, the entropy rule does not improve on fixed-duration decisions. For two classes, normalized posterior entropy is a monotone transform of maximum softmax probability, and an explicit ablation confirms the two are numerically identical; posteriors are severely miscalibrated (expected calibration error 0.429, fitted temperature 11.2), and correcting that calibration raises the forced-fallback rate from 8.9% to 64.2%, removing the early decisions rather than improving them.
+Four results follow. First, the speech-onset detector used in the earlier version fails: because its threshold falls below the recordings' room tone, it returns an onset at sample zero for approximately 45% of utterances, so a nominal "onset-aligned" prefix frequently contains no speech. Second, with a corrected level-adaptive causal detector and strictly speaker-independent five-fold evaluation, none of three compact architectures trained from scratch performs better than chance: pooled out-of-fold balanced accuracy is 47.5% (small CNN), 47.6% (CNN–BiLSTM) and 45.9% (Transformer), with per-fold accuracy ranging from 24.4% to 75.3%. Third, the entropy rule does not improve on fixed-duration decisions. For two classes, normalized posterior entropy is a monotone transform of maximum softmax probability, and an explicit ablation confirms the two are numerically identical; the compact models' posteriors are severely miscalibrated (expected calibration error 0.429, fitted temperature 11.2), and correcting that calibration raises the forced-fallback rate from 8.9% to 64.2%, removing the early decisions rather than improving them.
 
-We conclude that the 200–300 ms speech-onset window does not support reliable speaker-independent dysarthria detection on TORGO with compact spectral models, and that between-fold variance on a 15-speaker corpus exceeds every effect the earlier version reported. We publish the complete pipeline, the per-utterance prediction ledger, and the analyses so the result can be checked and extended.
+Fourth, and in contrast, a frozen WavLM Base+ representation with a 1,538-parameter linear head reaches 59.2% pooled balanced accuracy and 58.1% macro-F1 on identical folds and input durations, is above chance on four of five folds, halves the between-fold standard deviation, improves monotonically with prefix length, and is well calibrated without correction (expected calibration error 0.044 against 0.429). The 200–300 ms window therefore does carry usable dysarthria information; the compact spectral models simply fail to extract it. We temper this: with fifteen speakers the speaker-clustered interval on balanced accuracy is 47.9–70.8% and still includes chance, so we report a clear direction rather than a settled effect. We publish the complete pipeline, the per-utterance prediction ledger, and the analyses so the result can be checked and extended.
 
 **Keywords:** dysarthric speech detection, early decision, speaker-independent evaluation, reproducibility, calibration, speech onset, time entropy, TORGO.
 
@@ -40,8 +40,8 @@ The rebuild produced a further finding that bears directly on the earlier number
 
 1. A quantitative validation of RMS speech-onset detection on TORGO showing that two commonly used thresholding rules fail to localize onset on 45–72% of utterances, with the mechanism identified and a corrected level-adaptive causal rule specified (Section 5.1).
 2. A complete, frozen, speaker-independent reproduction pipeline for short-prefix dysarthria detection, with per-utterance prediction ledgers from which every reported table and figure is derived (Sections 3–4).
-3. Evidence that compact spectral models do not exceed the majority-class baseline on this task under correct speaker-independent evaluation, and that between-fold variance substantially exceeds between-model variance (Section 5.2).
-4. A demonstration that, for binary classification, normalized posterior entropy is exactly equivalent to maximum-softmax confidence, together with a calibration analysis showing that the apparent confidence driving early decisions is miscalibration: correcting it removes the early decisions (Sections 5.3–5.4).
+3. Evidence that compact spectral models trained from scratch do not perform better than chance on this task under correct speaker-independent evaluation, that between-fold variance substantially exceeds between-model variance among them, and that a frozen self-supervised representation on identical folds performs substantially better on every axis measured — accuracy, calibration, fold stability, and response to additional context (Section 5.2).
+4. A demonstration that, for binary classification, normalized posterior entropy is exactly equivalent to maximum-softmax confidence, together with a calibration analysis showing that the apparent confidence driving early decisions in the compact models is miscalibration: correcting it removes the early decisions. The same analysis shows the pretrained representation is well calibrated untouched, identifying miscalibration as a symptom of speaker memorization rather than an inherent property of the task (Sections 5.3–5.4).
 5. A prespecified robustness analysis quantifying the asymmetric cost of onset-localization error and showing that moderate additive noise *improves* measured accuracy, which we interpret as evidence against the robustness of what the models learn (Section 5.5).
 
 The remainder of the paper is organized as follows. Section 2 reviews related work. Section 3 describes the methodology. Section 4 details the experimental setup. Section 5 presents results. Section 6 discusses limitations and Section 7 concludes.
@@ -178,7 +178,9 @@ In both sequence models the convolutional front end pools **frequency only**, ne
 
 ### 3.6. Modern pretrained reference
 
-A WavLM Base+ reference is specified on identical folds and input durations: checkpoint `microsoft/wavlm-base-plus` pinned to immutable revision `4c66d4806a428f2e922ccfa1a962776e232d487b`, raw 16 kHz onset-aligned waveform input with a sample-level attention mask, masked-mean pooling, and a frozen backbone with Dropout 0.30 plus Linear 768→2 (1,538 trainable parameters). The loader is implemented and unit-tested and records the resolved commit in every run summary. **This reference was not executed within the present revision, and no result is reported for it.** Given the findings in Section 5.2 it is the most informative outstanding experiment.
+A WavLM Base+ reference is evaluated on identical folds and input durations: checkpoint `microsoft/wavlm-base-plus` pinned to immutable revision `4c66d4806a428f2e922ccfa1a962776e232d487b`, raw 16 kHz onset-aligned waveform input with a sample-level attention mask, masked-mean pooling, and a frozen backbone with Dropout 0.30 plus Linear 768→2. The backbone contributes 94,381,936 parameters of which **zero are trainable**; only the 1,538-parameter classification head is fitted. The loader records the resolved commit in every run summary and aborts if it does not match the requested identity.
+
+The comparison is condition-matched: identical folds, identical onset detector and pre-roll, identical prefix durations, identical class balancing, identical checkpoint-selection metric, and identical calibration and policy-selection partitions. The only difference is the representation — a pretrained self-supervised encoder versus log-STFT features consumed by a network trained from scratch.
 
 ### 3.7. Calibration
 
@@ -294,11 +296,31 @@ The level-adaptive causal rule is therefore primary for all results below. The c
 | Transformer | 200 ms | 43.07% | 43.04% | 56.65% |
 | Transformer | 250 ms | 42.11% | 42.11% | 57.91% |
 | Transformer | 300 ms | 41.94% | 41.93% | 60.05% |
-| **Constant "control" predictor** | — | **63.92%** | — | 0% |
+| **WavLM Base+ (frozen)** | 200 ms | 55.36% | — | — |
+| **WavLM Base+ (frozen)** | 250 ms | 56.95% | — | — |
+| **WavLM Base+ (frozen)** | 300 ms | **59.29%** | **58.10%** | 58.79% |
+| **Constant "control" predictor** | — | **63.92%** | 38.99% | 0% |
 
-No model at any prefix duration approaches the majority-class baseline of 63.92%. The best pooled result, 46.61%, is 17.3 points below it. Balanced accuracy for the Transformer's complete policy is 45.6% with a speaker-clustered 95% interval of 32.5–58.8%, which **includes 50%**: the system is not statistically distinguishable from chance on this design.
+Two distinct comparisons matter here, and conflating them is misleading.
 
-Longer prefixes do not reliably help. The CNN–BiLSTM improves from 42.66% to 46.61% between 200 and 300 ms, the small CNN is flat, and the Transformer *declines* from 43.07% to 41.94%. The earlier version's observation that additional context improves macro-F1 for most models does not reproduce.
+Against **raw accuracy**, no model reaches the 63.92% majority-class baseline, because all are trained with class-balanced sampling and therefore do not exploit the 64/36 class prior. Raw accuracy is the wrong yardstick for this task: the constant predictor that attains 63.92% has a macro-F1 of 38.99% and a balanced accuracy of exactly 50%, and detects no dysarthric speech whatsoever.
+
+Against **balanced accuracy and macro-F1**, the picture separates sharply. The three compact models reach balanced accuracies of 47.5%, 47.6% and 45.9% — at or below the 50% chance level. WavLM reaches **59.18%** balanced accuracy and **58.10%** macro-F1, roughly 12 points above the compact models and 9 above chance.
+
+Longer prefixes help WavLM and not the compact models. WavLM rises monotonically from 55.36% to 59.29% between 200 and 300 ms; the CNN–BiLSTM improves modestly, the small CNN is flat, and the Transformer *declines* from 43.07% to 41.94%. A model using genuine speech structure should benefit from additional context, and only the pretrained representation does.
+
+**Table 11a.** Fold-level stability at fixed 300 ms.
+
+| Model | Fold mean accuracy | Fold SD |
+|---|---:|---:|
+| WavLM Base+ | 58.69% | **9.98** |
+| CNN–BiLSTM | 47.45% | 12.96 |
+| Transformer | 43.88% | 19.59 |
+| Small CNN | 46.39% | 21.35 |
+
+WavLM roughly halves the between-fold standard deviation relative to the Transformer and small CNN, which is consistent with a representation that transfers across speakers rather than one fitted to the training speakers of each fold.
+
+**Statistical caution.** The speaker-clustered 95% interval for WavLM's balanced accuracy is 47.9–70.8%, which still **includes 50%**. With fifteen speakers this design cannot establish the advantage at conventional confidence, and we do not claim that it does. What we report is a consistent direction: WavLM is above chance on four of five folds, ahead of every compact model on the pooled estimate, more stable across folds, better calibrated, and the only model that improves with additional context. The corresponding interval for the Transformer is 32.5–58.8%.
 
 **Table 11.** Per-fold accuracy at fixed 300 ms, showing the dominant source of variance.
 
@@ -322,6 +344,15 @@ Validation performance also fails to predict test performance: the small CNN ach
 | Temperature-scaled | 0.837 | 0.303 | 0.212 |
 
 The fitted temperature is **11.23 ± 9.21** across folds, reaching the optimizer's upper bound of 20 in two folds. A well-calibrated model requires a temperature near 1. An expected calibration error of 0.429 means the raw posteriors are close to meaningless as confidence values, which is precisely the condition under which an entropy threshold cannot be trusted.
+
+**Table 12a.** Calibration of the pretrained reference, on the same pooled basis.
+
+| Model | Raw ECE | Temperature-scaled ECE | Fitted temperature |
+|---|---:|---:|---:|
+| Transformer | 0.4291 | 0.2117 | 11.23 |
+| **WavLM Base+** | **0.0445** | 0.0593 | 5.45 |
+
+The contrast is instructive. WavLM's frozen representation with a linear head is **well calibrated with no correction at all** — an expected calibration error of 0.044, an order of magnitude below the Transformer's — and temperature scaling makes it slightly *worse* rather than better. Severe overconfidence is therefore not an inherent property of this task or of short prefixes. It is a symptom of the compact models fitting their training speakers, and it disappears when the representation generalizes.
 
 ### 5.4. The entropy rule contributes nothing measurable
 
@@ -464,11 +495,15 @@ The "lightweight" claim is supported — all three models are under 1 MB seriali
 
 ## 6. Limitations and Interpretation
 
-The central finding is negative: on speaker-independent TORGO head-mounted-microphone folds, 200–300 ms of onset-aligned speech does not support reliable dysarthric-versus-control classification with the compact spectral models evaluated here, and the entropy-based early-decision rule provides no measurable benefit over fixed-duration decisions.
+The central finding is a representation gap. On speaker-independent TORGO head-mounted-microphone folds, 200–300 ms of onset-aligned speech does carry usable dysarthria information, but the compact spectral models evaluated here — and by extension those in the earlier version of this work — fail to extract it, while a frozen self-supervised representation extracts a substantial part of it. The entropy-based early-decision rule provides no measurable benefit over fixed-duration decisions in either case.
 
 Several limitations bound what may be concluded.
 
-**This is a negative result about a specific configuration, not a proof of impossibility.** It covers three compact architectures trained from scratch on log-STFT features, on one corpus, with one microphone type, under one fold structure. A modern self-supervised representation is specified in Section 3.6 but was not run, and remains the most informative outstanding experiment: it would distinguish "the task is very hard at this latency" from "these models are inadequate for it".
+**The advantage is directional, not established.** WavLM's speaker-clustered interval on balanced accuracy is 47.9–70.8% and includes chance. Fifteen speakers cannot settle a 9-point effect, and WavLM is itself below chance on fold 4. We report a consistent pattern across five independent measurements — pooled estimate, four of five folds, halved fold variance, calibration, and monotone response to prefix length — not a significant result.
+
+**Absolute performance remains modest.** 59.2% balanced accuracy is well short of clinical usefulness, and WavLM's raw accuracy does not beat a constant-class predictor. The finding is that the signal exists and is reachable, not that the problem is solved.
+
+**Only the frozen-backbone configuration was evaluated.** Fine-tuning the encoder, larger pretrained models, and speech-specific pretraining objectives are untested and would plausibly improve on this.
 
 **The design is underpowered.** With 15 speakers and 2–4 validation speakers per fold, checkpoint selection is noisy, validation does not predict test, and speaker-clustered intervals span roughly 25 accuracy points. We do not claim precision the design cannot support, and we do not interpret non-significant comparisons as equivalence.
 
@@ -482,11 +517,13 @@ Several limitations bound what may be concluded.
 
 We set out to determine how early after speech onset dysarthria can be detected, and whether posterior entropy can shorten that decision. Reviewer scrutiny of an inconsistency between our previously reported confusion matrix and our previously reported accuracy led us to rebuild the experiment from raw audio, after establishing that the original code and predictions no longer existed.
 
-The rebuild yields four results. The speech-onset detector underlying the earlier work fails on roughly 45% of utterances because its threshold lies below the recordings' room tone, so nominal onset-aligned prefixes frequently contain no speech. With a corrected level-adaptive causal detector, no compact model exceeds the majority-class baseline, and per-fold accuracy varies by up to 55 points, so between-fold variance exceeds between-model variance by more than an order of magnitude. Normalized posterior entropy is exactly equivalent to maximum-softmax confidence for two classes, and the posteriors are so poorly calibrated that correcting them removes the early decisions the method depends on. Onset error costs up to 6.7 accuracy points asymmetrically, while moderate additive noise *improves* measured accuracy.
+The rebuild yields four results. The speech-onset detector underlying the earlier work fails on roughly 45% of utterances because its threshold lies below the recordings' room tone, so nominal onset-aligned prefixes frequently contain no speech. With a corrected level-adaptive causal detector, no compact model trained from scratch performs better than chance, and per-fold accuracy varies by up to 55 points, so between-fold variance exceeds between-model variance among them by more than an order of magnitude. Normalized posterior entropy is exactly equivalent to maximum-softmax confidence for two classes, and those models' posteriors are so poorly calibrated that correcting them removes the early decisions the method depends on. Onset error costs up to 6.7 accuracy points asymmetrically, while moderate additive noise *improves* their measured accuracy.
 
-We therefore do not claim a working minimal-time dysarthria detector. We report instead that the 200–300 ms speech-onset window, as approached here, does not support one, and we document the specific ways in which an earlier and more optimistic conclusion arose. The complete pipeline, per-utterance prediction ledger, frozen configurations, and analysis code are published so the result can be checked, contradicted, or extended.
+The fourth result reframes the other three. A frozen WavLM Base+ representation with a 1,538-parameter linear head, on identical folds and durations, reaches 59.2% balanced accuracy against 45.9–47.6% for the compact models, halves the between-fold variance, is well calibrated without correction, and is the only model that improves as the prefix lengthens. The information is present in the first 200–300 ms after speech onset; compact spectral models trained from scratch on a fifteen-speaker corpus do not recover it, and their apparent confidence when they seem to is miscalibration.
 
-Future work should evaluate a pretrained self-supervised representation on the identical folds, adopt leave-one-speaker-out evaluation given the demonstrated fold sensitivity, and validate onset detection quantitatively before trusting any short-prefix result — the check in Section 5.1 requires no labels, no training, and no test data, and would have prevented the original error.
+We therefore do not claim a working minimal-time dysarthria detector — 59.2% balanced accuracy is not one, and with fifteen speakers the interval still includes chance. What we claim is narrower and, we think, more useful: the earlier optimistic result was unsupported, the specific mechanisms that produced it are identified, and the direction that does carry signal is pretrained representation rather than architectural variation among small spectral models.
+
+Future work should fine-tune rather than freeze the pretrained encoder, adopt leave-one-speaker-out evaluation given the demonstrated fold sensitivity, and validate onset detection quantitatively before trusting any short-prefix result — the check in Section 5.1 requires no labels, no training, and no test data, and would have prevented the original error.
 
 ## Data and code availability
 

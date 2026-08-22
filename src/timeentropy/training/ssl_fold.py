@@ -368,6 +368,9 @@ def run_ssl_fold(
         gradient_clip_norm=float(training["gradient_clip_norm"]),
         max_epochs=int(training["max_epochs"]),
         early_stopping_patience=int(training["early_stopping_patience"]),
+        selection_metric=str(
+            training.get("checkpoint_selection_metric", "speaker_balanced_macro_f1")
+        ),
     )
     result = train_with_early_stopping(
         model,
@@ -441,6 +444,10 @@ def run_ssl_fold(
         "device": str(device),
         "best_epoch": result.best_epoch,
         "best_checkpoint_nll": result.best_checkpoint_nll,
+        "best_checkpoint_speaker_balanced_macro_f1": (
+            result.best_checkpoint_speaker_balanced_macro_f1
+        ),
+        "checkpoint_selection_metric": result.selection_metric,
         "epochs_completed": result.epochs_completed,
         "stopped_early": result.stopped_early,
         "checkpoint_path": str(checkpoint_path),

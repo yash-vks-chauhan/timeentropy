@@ -438,12 +438,34 @@ This baseline replaces the withdrawn EfficientNet-lite row (R2.7/R3.4). We consi
 reproducible modern reference more informative than an unreproducible historical one — including
 if it beats our compact models, which we will report as found.
 
-**Status: specified and implemented, not yet executed.** The loader, revision pinning, masking,
-pooling, and frozen-backbone head are implemented and unit-tested, and the run is defined in the
-frozen matrix, but the reference has not been run. We state this plainly rather than presenting a
-specification as a result. Given the compact models perform at or below the majority-class
-baseline on this corpus (R1.6), a modern pretrained representation is the most informative
-remaining experiment, and it is listed first in the revision's outstanding work.
+**Executed, and it changed the paper's conclusion.** All five folds were run with a frozen
+backbone (94,381,936 parameters, **zero trainable**) and a 1,538-parameter linear head, on
+identical folds, onset detector, pre-roll, prefix durations, class balancing, checkpoint-selection
+metric, and calibration/policy partitions. The only difference from the compact models is the
+representation.
+
+| Model | Pooled balanced accuracy | Macro-F1 | Fold SD | Raw ECE |
+|---|---:|---:|---:|---:|
+| **WavLM Base+ (frozen)** | **59.18%** | **58.10%** | **9.98** | **0.044** |
+| CNN–BiLSTM | 47.56% | 46.09% | 12.96 | — |
+| Small CNN | 47.47% | 44.30% | 21.35 | — |
+| Transformer | 45.88% | 41.93% | 19.59 | 0.429 |
+| Chance / constant predictor | 50.00% | 38.99% | — | — |
+
+WavLM is roughly 12 points above the compact models in balanced accuracy and 9 above chance; it is
+above chance on four of five folds; it halves the between-fold standard deviation; it improves
+monotonically with prefix length (55.36 → 56.95 → 59.29% from 200 to 300 ms) where the Transformer
+*declines*; and it is **well calibrated with no correction at all** (ECE 0.044 against 0.429), with
+temperature scaling making it slightly worse.
+
+This answers the reviewer's implicit question. The 200–300 ms window does carry usable dysarthria
+information; the compact spectral models simply fail to extract it, and their severe
+overconfidence is a symptom of speaker memorization rather than a property of the task.
+
+We temper the claim as the design requires: the speaker-clustered 95% interval on WavLM's balanced
+accuracy is 47.9–70.8% and still includes chance, and WavLM is below chance on fold 4. With fifteen
+speakers this cannot be established at conventional confidence. We report a consistent direction
+across five independent measurements, not a significant effect.
 ### R1.11 Report an explicit area-under-the-accuracy–earliness curve or standardized early-classification metric
 
 **Author response.** Accepted. Mean latency alone is a poor summary — it hides the distribution
@@ -1513,7 +1535,6 @@ We list these separately rather than leaving them implied:
 | Request | Status | Reason |
 |---|---|---|
 | Cross-corpus test on UA-Speech or equivalent (R1.14, R1-EV.7) | **Not completed** | New-data experiment requiring separate access, task mapping, and protocol. Claim narrowed; listed as future work. No substitute offered. |
-| Modern pretrained speech baseline (R1.10) | **Specified and implemented, not yet run** | WavLM Base+ is pinned to an immutable revision and the loader is implemented and unit-tested, but the reference has not been executed. Reported as such rather than presented as a result; it is the first item of outstanding work. |
 | Far-field / mobile / conversational microphone validation (R1.17, R1-EV.8) | **Not completed** | Requires recordings TORGO's head-mounted subset does not contain. Additive noise is reported but explicitly not presented as a far-field simulation. |
 | Dysarthria severity and neurological etiology per speaker (R2.8) | **Partially completed** | Not present in the surviving corpus index. Reported only where authoritative TORGO documentation supports it; otherwise labelled not available rather than imputed. |
 | Exact historical EfficientNet-lite and CNN-GRU results (R2.7, R3.4) | **Withdrawn** | No variant identifier, layer definition, checkpoint, or prediction file survives. Withdrawn rather than reconstructed. |
