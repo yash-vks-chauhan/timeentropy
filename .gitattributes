@@ -1,0 +1,1 @@
+local_snapshot/timeentropy-ignored-20261027.tar.gz.part-* filter=lfs diff=lfs merge=lfs -text
