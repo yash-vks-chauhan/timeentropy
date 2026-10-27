@@ -19,7 +19,7 @@ from timeentropy.data import (
     make_class_balanced_sampler,
 )
 from timeentropy.evaluation.ledger import validate_prefix_ledger
-from timeentropy.models import CNNBiLSTM, ShortPrefixTransformer, SmallCNN
+from timeentropy.models import create_model as create_registered_model
 from timeentropy.provenance import environment_record, sha256_file, sha256_json
 from timeentropy.signal.onset import OnsetConfig
 from timeentropy.training.engine import (
@@ -73,18 +73,12 @@ def fold_run_id(
 
 
 def create_model(model_id: str, *, dropout: float) -> nn.Module:
-    """Instantiate a frozen primary architecture from its config identifier."""
+    """Instantiate a registered STFT architecture from its config identifier."""
 
-    factories: dict[str, type[nn.Module]] = {
-        "small_cnn": SmallCNN,
-        "cnn_bilstm": CNNBiLSTM,
-        "transformer": ShortPrefixTransformer,
-    }
     try:
-        factory = factories[model_id]
-    except KeyError as error:
+        return create_registered_model(model_id, dropout=dropout)
+    except ValueError as error:
         raise ValueError(f"Unsupported primary model: {model_id}") from error
-    return factory(dropout=dropout)
 
 
 def _make_loader(

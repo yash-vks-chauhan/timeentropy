@@ -117,10 +117,11 @@ def download_archive(spec: ArchiveSpec, archive_path: Path) -> None:
             pass
 
 
-def _member_suffix(member_name: str) -> str | None:
+def _member_suffix(member_name: str, *, mic: str = "headMic") -> str | None:
     parts = PurePosixPath(member_name).parts
+    channel_directory = f"wav_{mic}"
     for index, part in enumerate(parts):
-        if part == "wav_headMic" and index >= 2 and index + 1 < len(parts):
+        if part == channel_directory and index >= 2 and index + 1 < len(parts):
             return PurePosixPath(*parts[index - 2 : index + 2]).as_posix()
     return None
 
@@ -151,6 +152,31 @@ def extract_selected(
     if missing:
         preview = sorted(missing)[:10]
         raise RuntimeError(f"Archive lacked {len(missing)} indexed WAVs; first: {preview}")
+    return extracted
+
+
+def extract_channel(archive_path: Path, raw_root: Path, *, mic: str) -> int:
+    """Extract every WAV recorded through one channel from one official archive."""
+
+    raw_root.mkdir(parents=True, exist_ok=True)
+    extracted = 0
+    with tarfile.open(archive_path, mode="r:bz2") as archive:
+        for member in archive:
+            if not member.isfile():
+                continue
+            suffix = _member_suffix(member.name, mic=mic)
+            if suffix is None:
+                continue
+            destination = raw_root / suffix
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            source = archive.extractfile(member)
+            if source is None:
+                raise RuntimeError(f"Could not read archive member {member.name}")
+            with source, destination.open("wb") as output:
+                shutil.copyfileobj(source, output, length=1024 * 1024)
+            extracted += 1
+    if extracted == 0:
+        raise RuntimeError(f"Archive {archive_path} contained no wav_{mic} files")
     return extracted
 
 
@@ -199,6 +225,27 @@ def recover_group(
         print(f"{group}: removed verified temporary archive {archive_path}")
 
 
+def recover_channel_group(
+    group: str,
+    *,
+    archive_root: Path,
+    raw_root: Path,
+    mic: str,
+    delete_archive_after_verify: bool,
+) -> None:
+    """Download one official group and retain only its requested audio channel."""
+
+    spec = ARCHIVES[group]
+    archive_path = archive_root / f"{group}.tar.bz2"
+    print(f"{group}: downloading {spec.size_bytes} bytes from {spec.url}")
+    download_archive(spec, archive_path)
+    extracted = extract_channel(archive_path, raw_root, mic=mic)
+    print(f"{group}: extracted {extracted} wav_{mic} WAVs")
+    if delete_archive_after_verify:
+        archive_path.unlink()
+        print(f"{group}: removed verified temporary archive {archive_path}")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Resume TORGO downloads and selectively extract indexed headMic WAVs."
@@ -212,19 +259,33 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--raw-root", type=Path, default=Path("data/raw/torgo"))
     parser.add_argument("--groups", nargs="+", choices=tuple(ARCHIVES), default=list(ARCHIVES))
     parser.add_argument("--delete-archive-after-verify", action="store_true")
+    parser.add_argument(
+        "--extract-channel",
+        choices=("headMic", "arrayMic"),
+        help="Extract every WAV for this channel instead of the rows in --manifest.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     for group in args.groups:
-        recover_group(
-            group,
-            args.manifest,
-            args.archive_root,
-            args.raw_root,
-            args.delete_archive_after_verify,
-        )
+        if args.extract_channel is None:
+            recover_group(
+                group,
+                args.manifest,
+                args.archive_root,
+                args.raw_root,
+                args.delete_archive_after_verify,
+            )
+        else:
+            recover_channel_group(
+                group,
+                archive_root=args.archive_root,
+                raw_root=args.raw_root,
+                mic=args.extract_channel,
+                delete_archive_after_verify=args.delete_archive_after_verify,
+            )
 
 
 if __name__ == "__main__":

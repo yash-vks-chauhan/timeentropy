@@ -1,97 +1,117 @@
 # Reviewer action matrix
 
-## Governing rule
+This is a final-state disposition map, not an experiment progress tracker. A row is
+supported only when its cited artifact exists and passes its own validation. The
+authoritative run-completeness check is `scripts/run_experiments.py status`.
 
-The original code, checkpoints, and prediction files were deleted. None of the numerical
-claims in the submitted manuscript can therefore be defended as reproduced results. The
-revision will replace every result table and figure with outputs generated from the frozen
-rebuild protocol and one canonical out-of-fold prediction ledger. Historical values may be
-mentioned only to explain why the revision was necessary.
+## Governing reconstruction decision
 
-## Priority 1: experimental integrity
+The submitted numerical results cannot be reproduced because the original code,
+checkpoints, and predictions were deleted. The revision replaces them with results
+from the frozen reconstruction. Historical values are mentioned only to explain the
+revision; they are not mixed with regenerated evidence.
 
-| Issue | Required action | Evidence/output | Status |
-|---|---|---|---|
-| Figure 6 does not reproduce Table 3 | Regenerate predictions, decisions, metrics, and confusion matrices from one ledger | Validated prefix and decision ledgers; machine-readable metrics JSON | Code implemented; awaiting full rerun |
-| Pooled and fold-averaged summaries were conflated | Report pooled OOF metrics and unweighted fold mean ± SD as separate estimands | Fold table plus pooled table with explicit captions | Code implemented; awaiting full rerun |
-| Mean latency did not exactly reproduce from Table 4 counts | Recompute latency from the same decision rows used for classification metrics | Decision-time counts and row-level decision ledger | Code implemented; awaiting full rerun |
-| Old fixed-duration “mean” is not a deployable baseline | Compare fixed 150, 200, 250, and 300 ms policies separately | Fixed-prefix table and accuracy–earliness curve | Protocol frozen |
-| Test set may have influenced historical threshold selection | Fit checkpoints, temperature, and policy on disjoint validation subsets only | Split-role column and selection audit file | Implemented |
+Results come from several hash-linked artifact families—primary evaluation ledgers,
+reports, robustness ledgers, retrained ablations, sensitivity tables, the onset
+diagnostic, error strata, and runtime profiles—not from one physical ledger or one Git
+commit. Each claim must name its actual source.
 
-## Priority 2: fully specified method
+## Experimental integrity and statistics
 
-| Reviewer request | Frozen revision action |
+| Reviewer issue | Final disposition | Auditable evidence |
+|---|---|---|
+| Submitted Figure 6 did not reconcile with its tables | Replace the figure and every metric with regenerated out-of-fold results; validate labels, counts, latency, and selected-prefix linkage from the same decision rows | `artifacts/evaluation/<system>/`, `artifacts/reports/<system>/`, ledger invariant tests |
+| Pooled and fold-averaged estimates were conflated | Report pooled OOF metrics and unweighted five-fold mean ± sample SD as different estimands | `pooled_metrics.*`, `fold_metrics.*`, `fold_summary.*` |
+| Mean latency did not reproduce from decision counts | Compute latency and fallback rate from the canonical decision rows | `latency_counts.*`, `latency_summary.*`, `decisions.parquet` |
+| A fixed-duration arithmetic mean was treated as a baseline | Compare deployable fixed 150, 200, 250, and 300 ms policies separately; compare the adaptive policy primarily with the best relevant fixed endpoint, not an average duration | `fixed_prefix_metrics.csv`, paired policy tables, accuracy–earliness coordinates |
+| Historical threshold selection may have used test data | Split validation-speaker utterances deterministically into disjoint checkpoint (50%), calibration (25%), and policy-tuning (25%) row subsets; never fit on test speakers | `split_role` in prefix ledgers, temperature fits, policy selections |
+| Fold/speaker domination was hidden | Publish all five folds, per-speaker metrics, pooled metrics, and speaker-clustered intervals | report fold/speaker/bootstrap tables |
+| Statistical significance was unclear | Use speaker-clustered paired bootstrap for primary effect intervals; retain utterance-level McNemar counts only as an explicitly unclustered sensitivity analysis | paired comparison and McNemar tables |
+| Seed sensitivity was unreported | Report the primary Transformer seed plus two frozen replication seeds on identical folds; describe three-seed intervals as descriptive, not speaker-generalization intervals | `artifacts/evaluation/transformer-seed*`, `transformer-three-seed/` |
+
+## Method specification
+
+| Reviewer request | Final disposition |
 |---|---|
-| RMS onset frame, hop, threshold, and criterion | State 20 ms RMS frames, 10 ms hop, threshold formula, and two-consecutive-frame confirmation. The recovered whole-utterance peak-relative rule is non-causal and is retained only as an offline comparator. A level-adaptive causal noise-floor rule is primary: label-free validation showed the fixed-threshold alternative fires at sample 0 on 71.7% of utterances, and the recovered peak-relative rule on 45%, because their thresholds sit below the recordings' room tone. See `docs/onset_finding.md`. |
-| Quantitative onset validation | Manually annotate a prespecified stratified subset, report detection-failure rate and signed/absolute onset error, and repeat the main policy under onset perturbations. |
-| Meaning of 30 ms pre-roll | Define prefix `t` as `t` ms of post-onset signal plus up to 30 ms of already observed past context. Report an ablation with zero pre-roll. |
-| Complete small-CNN architecture | Publish every convolution, normalization, activation, pooling operation, dropout, classifier layer, input/output shape, and verified parameter count. |
-| CNN-LSTM frame tokens | The spectral CNN pools frequency only; the remaining `T` positions form a `B × T × 48` sequence for a one-layer bidirectional LSTM. |
-| Transformer frame tokens | The spectral CNN pools frequency only, adaptively reduces frequency to two bins, and flattens `48 × 2` values into each 96-dimensional time token before positional encoding. |
-| EfficientNet-Lite variant | No exact historical variant can be recovered. Remove the unsupported EfficientNet-Lite result rather than invent a variant. |
-| CNN-GRU architecture/result | No exact historical architecture or prediction file survives. Remove it from the primary revision rather than claim reproducibility. |
-| Entropy threshold and stability tolerance | Search `theta = 0.30…0.95` in steps of 0.05 and `epsilon = 0.00…0.20` in steps of 0.02 on policy-tuning validation rows only. Select minimum mean observation time subject to macro-F1 being within 0.01 absolute of fixed 300 ms. Publish fold-specific selected values. |
-| Value of `C` and `log C` | `C = 2`. Division by `log(2)` maps binary Shannon entropy to `[0,1]`, making the threshold scale explicit. Also state that for two classes entropy thresholding is a monotone transform of maximum softmax confidence, so the contribution is the validated sequential policy rather than a novel uncertainty statistic. |
-| Value of `Delta` and first predecessor | `Delta = 50 ms`. Compute the 150 ms prediction as a warm-up predecessor for the 200 ms stability tests; never emit a 150 ms decision. |
-| Why candidates start at 200 ms | The 150 ms prefix initializes stability. Eligible outputs are 200, 250, and 300 ms. Update the equation, algorithm, and figure consistently. |
+| RMS frame, hop, threshold, onset criterion | Specify 20 ms left-aligned RMS frames, 10 ms hops, two consecutive active frames, all threshold formulae, and separate onset anchor from acoustic availability/confirmation. The adaptive threshold uses ten frame starts at 0–90 ms; the last frame ends at 110 ms. |
+| Primary onset mode | Use the level-adaptive causal noise-floor rule. Retain the absolute-floor and whole-utterance peak-relative rules as fixed-threshold and noncausal comparators. Do not call the label-free diagnostic human onset validation. |
+| Quantitative human onset validation | Not performed: the deterministic 300-row worksheet is unannotated. Report only label-free anchor diagnostics and imposed ±10/30/50 ms shifts; do not report manual onset error or inter-annotator agreement. |
+| 30 ms pre-roll | Define a nominal `t` prefix as `t` ms post-onset plus up to 30 ms already-observed history. Report the condition-matched zero-pre-roll retraining result; do not claim the pre-roll helps when the measured comparison does not show that. |
+| Complete small-CNN architecture | Publish every convolution, batch-normalization, ReLU, time/frequency pooling operation, adaptive pooling, dropout, linear layer, tensor shape, and verified 23,538-parameter count. |
+| CNN–BiLSTM tokens | Pool frequency only; the remaining `T` positions form `B × T × 48`, followed by one bidirectional LSTM layer and masked temporal pooling. |
+| Transformer tokens | Pool frequency only, adapt frequency to two bins, and flatten `48 × 2` values into a 96-dimensional token for each time frame before positional encoding and the Transformer encoder. |
+| EfficientNet-Lite and CNN-GRU | Remove both historical results. No exact architecture/checkpoint survives; do not invent a variant. |
+| Modern speech reference | Use `microsoft/wavlm-base-plus` at immutable revision `4c66d4806a428f2e922ccfa1a962776e232d487b`, frozen backbone, masked-mean pooling, dropout 0.30, and a trained 768→2 head. |
+| Entropy grid and selection | Search `theta=0.30…0.95` by 0.05 and `epsilon=0.00…0.20` by 0.02 on policy-tuning rows. Minimize validation observation time subject to macro-F1 being within 0.01 absolute of that fold's fixed-300-ms validation macro-F1; publish fold selections and the full validation surface. |
+| `C` and `log C` | `C=2`; division by `log(2)` maps Shannon entropy to `[0,1]`. State that binary entropy is a monotone reparameterization of maximum softmax confidence. |
+| `Delta` and first predecessor | `Delta=50 ms`; the 150 ms prediction is the predecessor for the 200 ms stability checks and is never eligible to emit a decision. |
+| Why candidates start at 200 ms | 150 ms initializes temporal stability. Eligible outputs are 200, 250, and 300 ms, with forced fallback at 300 ms. |
+| Training details | Publish optimizer, learning rate, weight decay, batch size, epochs/patience, label smoothing, gradient clipping, augmentation, weighted sampling, prefix sampling, seeds, validation partition, checkpoint metric, device, and nondeterminism caveat. |
 
-## Priority 3: validation and analysis
+## Validation and analysis disposition
 
-| Requested analysis | Planned output |
+| Requested analysis | Final evidence and interpretation |
 |---|---|
-| Calibration | Raw versus temperature-scaled NLL, Brier score, 15-bin ECE, reliability diagrams, and policy performance. |
-| Policy-component ablation | Fixed 300 ms, entropy only, entropy plus class stability, entropy plus entropy-change stability, and complete policy. |
-| Threshold sensitivity | Validation response surfaces and test reporting only at validation-selected parameters; no test retuning. |
-| Accuracy–earliness trade-off | Fixed-prefix curve, consumed fraction, timeliness, and prespecified accuracy–earliness and macro-F1–earliness harmonic means with their exact definition. |
-| Fold and speaker variation | All five fold results, mean ± SD, pooled OOF metrics, per-speaker metrics, and speaker-clustered bootstrap 95% confidence intervals. |
-| Statistical comparison | Paired utterance correctness analysis plus speaker-clustered paired bootstrap effect intervals. Avoid interpreting a non-significant result as equivalence. |
-| False positives in Figure 6 | Regenerate the matrix first. Audit false positives by speaker, prompt type, duration, onset error/failure, entropy, SNR proxy, and decision time. Include representative spectrograms only after a blinded error taxonomy is defined. |
-| Robustness | Prespecified additive-noise/SNR and onset-shift tests; causal versus recovered offline onset; zero versus 30 ms pre-roll. |
-| Practical latency | Separately time acoustic observation, onset processing, feature extraction, model inference, policy computation, and total wall time. Report warm/cold CPU and available accelerator timing with hardware and batch size. |
-| Complexity | Parameters, serialized weights, peak memory, multiply–accumulate/FLOP convention, and prefix-specific runtime. |
-| Modern speech baseline | Add a clearly specified pretrained/self-supervised speech representation using the identical speaker folds and input durations. Mark frozen-feature versus fine-tuned use explicitly. |
+| Calibration | Raw and temperature-scaled NLL, Brier, 15-bin ECE, reliability bins/figures, temperatures, and policy results. Calibration changes confidence/exit behavior; it is not assumed to improve accuracy. |
+| Policy components | Fixed policies; entropy only; entropy + class stability; entropy + entropy-change stability; complete policy; exact maximum-softmax equivalence check. |
+| Threshold sensitivity | Full validation-grid surface and fold summaries; test reporting only at validation-selected values. |
+| Accuracy–earliness | Absolute decision time, decision counts, fallback rate, consumed fraction, timeliness, and the explicitly defined harmonic summaries. Do not hide accuracy and latency behind one scalar. |
+| Noise/onset-shift robustness | All 55 prespecified fold-condition evaluations, pooled and fold summaries. Interpret white noise as a synthetic stress test; counterintuitive improvements indicate instability/class-bias shifts, not a robustness mechanism. |
+| Input-definition robustness | Condition-matched zero-pre-roll, causal-fixed, and recovered-offline-peak retraining with condition-specific temperature and policy selection. Never substitute test-time recropping for retraining. |
+| False positives/negatives | Quantitative rates by speaker, diagnosis, prompt type, decision time, duration, onset status, and calibrated entropy. These are associations, not causes. The current audit has no human-reference onset-error bin and no SNR-proxy stratum. Dysarthric recall by the published speaker-level severity mapping is reported descriptively; severity is constant within speaker, so it cannot be separated from speaker identity. |
+| Human qualitative error causes | Not performed: the deterministic review sample has blank taxonomy fields. Do not claim blinded causal review or representative cause-labelled examples. Exclude the unblinded key from public supplements. |
+| Practical latency | Separate post-onset observation time from detector acoustic availability, buffered pre-roll, crop/STFT/model/posterior/policy compute, and total warm batch-1 compute. A detector's CPU execution time is not its acoustic look-ahead. |
+| Complexity | Report compact-model parameter counts, serialized state bytes, MAC/FLOP convention, and measured runtime. WavLM FLOPs/runtime and isolated model memory were not profiled. |
 
-The calibration, stopping-policy, reporting, onset-validation, error-audit, profiling,
-modern-reference, and robustness execution layers are now implemented and tested. A sequential
-orchestration layer (`src/timeentropy/orchestration.py`, `scripts/run_experiments.py`) expands
-the frozen configs into an auditable 100-job matrix, refuses to execute on an unfrozen config,
-a dirty worktree, incomplete audio, or missing dependencies, and stamps every artifact with the
-Git commit that produced it. They remain scientifically **pending** until the recovered audio
-has been validated and the frozen fold runs have completed; implementation tests are not
-substitutes for corpus results.
+## Scope and claims
 
-## Priority 4: claims and scope
+- Use “utterance-level dysarthric-speech classification” or “detection,” not clinical
+  diagnosis.
+- Limit empirical claims to the selected TORGO head-mounted channel and the evaluated
+  speaker-exclusive folds.
+- Report class balancing as inverse-frequency sampling with replacement and keep
+  original cohort counts distinct from expected sampled draws.
+- Report exact fold speaker IDs and only source-supported demographics. Joy, Umesh, and
+  Abraham (2017; <https://doi.org/10.21437/Interspeech.2017-878>) publish
+  speech-language-pathologist/Frenchay severity categories: severe (F01, M01, M02,
+  M04), severe-moderate (M05), moderate (F03), and mild (F04, M03). Neurological
+  etiology remains unavailable and must not be inferred.
+- Treat severity-stratified recall/error rates as descriptive. Severity is constant
+  within speaker, several categories contain only one or two speakers, and the study
+  does not estimate severity as a prediction target.
+- Contextualize prior studies by corpus, microphone, segment duration, split unit,
+  prediction unit, aggregation, metric, and latency definition. Do not rank incompatible
+  headline scores.
+- Do not describe poor held-out performance as proof of “speaker memorization”; it is
+  associated with poor speaker generalization, but the mechanism was not isolated.
+- Do not call additive noise a proxy for far-field/mobile microphones.
 
-- Replace “diagnosis” language with “utterance-level dysarthric-speech classification.” The
-  experiment does not establish neurological diagnosis or clinical severity.
-- Narrow generalization claims to head-mounted-microphone TORGO speech under the evaluated
-  speaker-independent folds.
-- Add a literature table with corpus, microphone, task, segment duration, speaker separation,
-  metric, and latency definition. Do not rank non-comparable numbers as if they share a test
-  protocol.
-- Describe class balancing exactly: original fold counts, inverse-frequency weighted sampling
-  with replacement, epoch sample count, and the resulting expected 50/50 draw distribution.
-- Report the exact speaker IDs in train, validation, and test for every fold.
-- Report sex, diagnosis/etiology, severity, and prompt type only where the TORGO metadata or an
-  authoritative corpus source supports them; label missing fields rather than infer them.
+## Reviewer requests not completed with the available evidence
 
-## Requests that cannot be honestly completed from TORGO alone
+| Request | Honest response |
+|---|---|
+| Cross-corpus validation | Not performed. It requires legally accessible data and a compatible task mapping. |
+| Real far-field/mobile microphone validation | Not performed. TORGO `headMic` plus synthetic noise does not test a real channel shift. |
+| Neurological etiology per dysarthric speaker | Not available from the verified sources; do not infer it from dysarthria or severity. |
+| Manual onset accuracy and inter-annotator agreement | Not performed; human reference fields remain blank. |
+| Human qualitative cause audit | Not performed; taxonomy fields remain blank. |
+| WavLM deployment complexity/runtime | Not profiled. Only parameter identity and classification results are reported. |
 
-Cross-corpus testing on UA-Speech and far-field/mobile microphone validation are new-data
-experiments, not manuscript edits. They should be run only if legally accessible data and a
-compatible task mapping can be established. If they cannot be completed within the revision,
-the response must say so directly, narrow the claims, and list them as limitations rather than
-claiming that noise injection substitutes for an independent corpus or real microphones.
+These are limitations, not unfinished manuscript promises.
 
-## Deliverables before resubmission
+## Final deliverable gate
 
-1. Frozen configuration, environment manifest, source hashes, and exact fold manifest.
-2. Raw prefix-logit ledger for every validation and OOF test utterance at 150/200/250/300 ms.
-3. Calibration, threshold-selection, and final decision ledgers.
-4. Recomputed tables, figures, confidence intervals, and profiling results from those ledgers.
-5. Revised manuscript with tracked or highlighted changes.
-6. Point-by-point response document using the supplied response sample only as a formatting
-   guide; every response must cite a manuscript page/line and an artifact or analysis. Drafted
-   in `docs/reviewer_response.md`: Reviewer 3 R3.1-R3.10 are answered, with R3.2, R3.6, R3.7,
-   and R3.10 explicitly marked pending the frozen reruns. Reviewer 1 and Reviewer 2 sections
-   await their comments.
+Before resubmission, require all of the following:
+
+1. `run_experiments.py status` reports 100 complete jobs and no pending/invalid jobs.
+2. Seed and retrained-ablation evaluations/aggregates exist and validate.
+3. Error-audit outputs are regenerated after the merge fix, add descriptive dysarthric
+   recall/false-negative rate by the published Joy et al. speaker-level severity mapping,
+   and contain no unsupported human-onset, etiology, or qualitative-cause claims.
+4. Every manuscript/response number is linked to its actual artifact family.
+5. Clean and marked manuscript plus response DOCX files are rebuilt and every rendered
+   page is inspected.
+6. Numerical verification, all tests, Ruff, source audits, package privacy checks, and
+   archive hashes pass.
+7. The public package excludes TORGO audio/archives, checkpoints, private paths,
+   incomplete human worksheets, the unblinded key, and superseded evidence.

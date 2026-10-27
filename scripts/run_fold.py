@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from timeentropy.models import available_model_names
 from timeentropy.training.fold import run_fold
 
 
@@ -15,7 +16,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model",
         required=True,
-        choices=("small_cnn", "cnn_bilstm", "transformer"),
+        choices=tuple(name for name in available_model_names() if name != "wavlm_reference"),
     )
     parser.add_argument("--config", type=Path, default=Path("configs/rebuild_v1.yaml"))
     parser.add_argument("--seed", type=int)

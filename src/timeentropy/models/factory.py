@@ -5,13 +5,17 @@ from __future__ import annotations
 from torch import nn
 
 from .cnn_bilstm import CNNBiLSTM
+from .cnn_gru import CNNGRU
 from .common import DEFAULT_DROPOUT
+from .efficientnet_lite import EfficientNetLite0
 from .small_cnn import SmallCNN
 from .transformer import ShortPrefixTransformer
 
 _MODEL_TYPES: dict[str, type[nn.Module]] = {
     "small_cnn": SmallCNN,
     "cnn_bilstm": CNNBiLSTM,
+    "cnn_gru": CNNGRU,
+    "efficientnet_lite0": EfficientNetLite0,
     "transformer": ShortPrefixTransformer,
 }
 _SSL_MODEL_NAME = "wavlm_reference"
@@ -20,6 +24,9 @@ _ALIASES = {
     "cnn_lstm": "cnn_bilstm",
     "cnn-lstm": "cnn_bilstm",
     "cnn-bilstm": "cnn_bilstm",
+    "cnn-gru": "cnn_gru",
+    "efficientnet-lite0": "efficientnet_lite0",
+    "efficientnet_lite": "efficientnet_lite0",
     "short_prefix_transformer": "transformer",
     "short-prefix-transformer": "transformer",
     "ssl_reference": _SSL_MODEL_NAME,

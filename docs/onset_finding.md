@@ -1,84 +1,155 @@
-# Onset-detector finding
+# Speech-onset detector diagnostic
 
-## Summary
+## Scope of this evidence
 
-The prespecified onset validation that Reviewers 1 and 2 requested (R1.4, R2.4, R3.1) found that
-the frozen **primary** onset detector did not localise speech onset on most of the corpus. The
-primary mode has been changed from `causal_fixed` to `causal_noise_floor` on the strength of that
-validation. The **original manuscript's** detector is affected by the same problem to a lesser
-but still substantial degree.
+Reviewer scrutiny exposed a defect in the submitted onset rule. The reconstruction
+therefore compared three frozen RMS modes on a deterministic, speaker-balanced sample
+of 600 TORGO waveforms (40 per speaker). This comparison is **label-free**: it uses no
+diagnosis label, model output, or test metric.
 
-## The defect
+It is not human onset validation. The 300-row manual annotation worksheet has no
+completed reference onsets, so this study cannot report onset error, agreement, or the
+fraction of anchors within a human tolerance. “Returned sample zero” and “quiet 300 ms
+crop” are diagnostic heuristics, not ground-truth localization errors.
 
-`causal_fixed` thresholds short-time RMS at a fixed absolute floor of **0.003**, which is
-**−50 dBFS**. Measured room tone in the TORGO head-mounted-microphone recordings sits at
-**−22 to −41 dBFS** — that is, *above* the threshold. The first analysis frame therefore already
-exceeds it, the two-consecutive-frame criterion is satisfied immediately, and the detector
-returns an onset at sample 0.
+## Three evaluated modes
 
-Concrete example (MC04, `[say 'Eee-P-Ah' repeatedly]`, 4.92 s): room tone holds near −41 dBFS for
-about 1.4 s, then speech reaches −9 dBFS. All ten of the first ten frames exceed the threshold,
-so the reported "onset" is sample 0 and the nominal 300 ms onset-aligned prefix is entirely room
-tone.
+All modes use left-aligned 20 ms RMS frames, 10 ms hops, and the first run of two
+consecutive active frames.
 
-The failure is speaker-dependent, because it depends on each speaker's recording level. M05's
-recording opens directly on speech, so an anchor at sample 0 is approximately correct there.
+### Fixed causal floor
 
-## Measured effect
+`causal_fixed` uses `tau=0.003` (approximately −50.5 dBFS). The floor is below the
+initial signal level in many head-mounted recordings, so the first two frames are often
+already active and the returned anchor is frame zero.
 
-Label-free diagnostic over 600 utterances, 40 per speaker, using only waveforms — no label, no
-model output, no test metric (`scripts/diagnose_onset_modes.py`):
+### Recovered whole-utterance peak rule
 
-| Mode | Fires at sample 0 | Median onset | Median post-onset RMS | Prefix is room tone | Post/pre energy |
-|---|---:|---:|---:|---:|---:|
-| `causal_fixed` (former primary) | **71.7%** | 0 ms | 0.0119 | **43.3%** | +19.5 dB |
-| `causal_noise_floor` (**new primary**) | 4.7% | 1060 ms | 0.1713 | 3.5% | +25.3 dB |
-| `recovered_offline_peak` (original manuscript) | **45.0%** | 40 ms | 0.0149 | **27.5%** | +15.2 dB |
+`recovered_offline_peak` uses
+`tau=max(0.003, max_m r[m] × 10^(−35/20))`. Because the maximum is taken over the
+complete recording, the rule reads future audio and cannot support an online-latency
+claim. It also frequently returns frame zero.
 
-The adaptive causal rule places roughly **14×** more acoustic energy inside the prefix and
-reduces room-tone prefixes from 43.3% to 3.5%.
+### Adaptive causal noise-floor rule
 
-## Downstream consequence
+`causal_noise_floor` uses
 
-The single completed fold under `causal_fixed` (CNN–BiLSTM, fold 0) scored **77.4–82.2%** on its
-three validation partitions and **52.9%** on test, against a 51.9% majority-class baseline. The
-per-speaker breakdown identifies the mechanism: control speaker **MC04** — 650 utterances, 38% of
-that fold's test set, all with onsets at sample 0 — was classified dysarthric on **100%** of
-utterances, while control speaker FC01 scored 85.9% and dysarthric speaker M05, whose recording
-opens on speech, scored 99.6%.
+```text
+tau = max(0.003, median(r[0], ..., r[9]) × 10^(15/20)).
+```
 
-This is a direct empirical demonstration of the concern raised in R1.7 and R1.18: with 15
-speakers, a single speaker can dominate a fold. It is also a direct demonstration of R1.4 — onset
-localisation error propagates into the classification result, not merely into the latency claim.
+The ten frames start at 0, 10, ..., 90 ms. With 20 ms frames, the last reference frame
+ends at 110 ms, so the threshold is acoustically available only after 110 ms. Online
+confirmation is the later of threshold availability and the end of the required
+two-active-frame run. The returned anchor may refer to an earlier frame; anchor time,
+confirmation/availability time, and CPU detector execution time are distinct.
 
-## Why this is not test-set tuning
+The adaptive reference can be contaminated when speech begins inside the first 110 ms.
+Without human references, its absolute localization accuracy remains unknown.
 
-The decision to change the primary mode rests **only** on waveform statistics: the relationship
-between each recording's noise floor and the detector threshold, and the acoustic energy present
-in the resulting prefix. No label, model output, or test metric enters the diagnostic, and it can
-be reproduced on the raw corpus with no trained model. `causal_noise_floor` was already one of the
-three prespecified modes in the frozen configuration; it was selected among prespecified
-alternatives on a prespecified label-free criterion, not introduced afterwards.
+## Label-free diagnostic results
 
-The test result above is reported as a *consequence* of the defect, not as its evidence. Had the
-onset diagnostic been run before any training — as it should have been — the same conclusion would
-have followed from the waveform statistics alone.
+`scripts/diagnose_onset_modes.py` generated
+`artifacts/onset_diagnosis/onset_mode_diagnostic.csv` and
+`onset_mode_summary.json`. The script uses sample zero as the registered crop fallback
+when no active run is detected, so the combined “returned zero” rate must be separated
+into detected-at-frame-zero and no-onset cases.
 
-## Disposition
+| Mode | Detected at frame 0 | No active run; zero fallback | Returned sample 0 (combined) | Median returned anchor | Median 300 ms crop RMS | Quiet crop (`RMS<0.01`) | Median post/pre RMS ratio |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `causal_fixed` | 429/600 (71.5%) | 1/600 (0.2%) | 71.7% | 0 ms | 0.0119 | 43.3% | +19.5 dB |
+| `causal_noise_floor` | 0/600 (0.0%) | 28/600 (4.7%) | 4.7% | 1060 ms | 0.1713 | 3.5% | +25.3 dB |
+| `recovered_offline_peak` | 269/600 (44.8%) | 1/600 (0.2%) | 45.0% | 40 ms | 0.0149 | 27.5% | +15.2 dB |
 
-- `configs/rebuild_v1.yaml`: `onset.primary_mode` → `causal_noise_floor`; `causal_fixed` demoted
-  to `secondary_mode`.
-- `configs/robustness_v1.yaml`: the primary retrained condition becomes
-  `primary_causal_noise_floor_preroll30`; the pre-roll ablation becomes
-  `causal_noise_floor_preroll0`; `causal_fixed_preroll30` is retained as a
-  `fixed_threshold_comparator` so the failure is quantified in the manuscript rather than merely
-  described.
-- The completed `causal_fixed` fold is retained under
-  `artifacts/evidence/superseded_causal_fixed/` and is not a current result.
+Relative to the fixed-floor mode, the adaptive mode has approximately 14.4 times
+larger median crop RMS and reduces the quiet-crop heuristic from 43.3% to 3.5%. This is
+an amplitude/RMS comparison, not “14× more acoustic energy” (energy is proportional to
+RMS squared).
 
-## Reporting obligation
+The median initial-reference RMS in the sampled recordings is approximately 0.00850
+(−41.4 dBFS), already above the 0.003 fixed floor. Initial windows vary widely and can
+contain immediate speech, so no single “room-tone range” should be asserted from this
+diagnostic.
 
-The revision reports that the original manuscript's non-causal peak-relative detector fires at
-sample 0 on approximately **45%** of utterances, leaving about **27.5%** of prefixes containing
-room tone rather than speech. This plausibly affected the submitted results and is disclosed
-directly in the response to R1.4 and R2.4 rather than left for a reviewer to discover.
+## Why the primary mode changed
+
+The primary changed from `causal_fixed` to `causal_noise_floor` because of the
+prespecified label-free criteria: fewer sample-zero fallbacks/anchors, fewer quiet
+300 ms crops, and substantially larger post-anchor RMS. The decision did not use class
+labels or classifier performance. The adaptive mode was already a registered
+alternative; it was not invented after viewing test accuracy.
+
+The earlier causal-fixed single-fold run is superseded evidence and must not be used as
+a current performance result. The final input-definition comparison uses all five
+condition-matched folds with condition-specific calibration and policy selection under
+`artifacts/robustness/retrained/`.
+
+## Downstream stress test
+
+The prespecified test-time experiment shifts the primary anchor by −50, −30, −10, 0,
++10, +30, and +50 ms while keeping checkpoint, calibration, and policy fixed. For the
+complete calibrated Transformer policy, pooled accuracy is 41.95% at zero shift,
+38.89% at −10 ms, 35.27% at −30 ms, 35.84% at −50 ms, 43.44% at +10 ms, 41.63% at
++30 ms, and 40.97% at +50 ms.
+
+These imposed-shift results show asymmetric sensitivity to the crop anchor. They do not
+measure real detector error, prove the adaptive anchor is correct, or identify a causal
+acoustic mechanism. The complete fold-level and pooled evidence is in
+`artifacts/robustness/test-time/combined/`.
+
+## Correct reporting language
+
+Use:
+
+- “sample-zero anchor/fallback rate,” not “onset failure rate,” unless the no-active-run
+  flag itself is being reported;
+- “quiet-crop heuristic,” not “prefix proven to contain no speech”;
+- “label-free onset-mode diagnostic,” not “manual onset validation”;
+- “noncausal whole-utterance comparator,” not a deployable detector; and
+- “descriptive association/sensitivity,” not causal error propagation.
+
+The submitted peak-relative rule returned sample zero for 45.0% of the diagnostic
+sample and produced a quiet 300 ms crop for 27.5%. This plausibly affects the validity
+of the submitted onset-aligned interpretation, but the deleted predictions prevent a
+quantitative correction of the historical results.
+
+## Condition-matched retraining reverses the diagnostic's implication
+
+Each comparator was retrained on all five folds with its own temperature and
+validation-selected policy, then evaluated on the identical 8,131 out-of-fold utterances.
+Both rejected rules classify better than the primary rule: pooled accuracy 59.28% for
+`causal_fixed` and 67.37% for `recovered_offline_peak`, against 41.95%. The paired
+speaker-clustered accuracy differences are +17.33 points [+3.85, +28.97] and +25.42 points
+[+12.42, +37.14]; both exclude zero.
+
+The advantage is an artifact of where each rule fails. Stratifying the difference by whether
+the crop begins at the recording start puts the whole effect in that stratum: `causal_fixed`
+is 14.13 points *worse* than the primary rule wherever it anchors after sample zero. Inside
+the recording-start stratum the gain lands on control utterances (+33.02 and +47.08) rather
+than dysarthric ones (+7.49 and −1.23). The reason is that the comparators reach the
+recording start at very different rates per class — 88.94% of control versus 59.78% of
+dysarthric utterances for `causal_fixed`, and 72.73% versus 25.09% for
+`recovered_offline_peak`, against 6.39% versus 2.15% for the primary rule.
+
+A detector whose failure rate depends on the class supplies a shortcut: "this input looks
+like the start of a recording" becomes a proxy for "control". The measured accuracy gain is
+therefore evidence about the recording, not about speech-onset localization, and it does not
+justify reinstating either rule. The primary rule was fixed from waveform diagnostics before
+any test evaluation; changing it on these test numbers would be selection on the test set.
+
+The stratification establishes where the difference lives. It does not identify what inside
+those crops carries the signal, and no causal claim is made. Artifacts:
+`artifacts/robustness/retrained/{causal_fixed_preroll30,offline_peak_preroll30}/` and
+`artifacts/onset_diagnosis/onset_mode_confound/`.
+
+## Remaining limitations
+
+- No human reference onsets or inter-annotator agreement.
+- Possible contamination of the adaptive 110 ms noise-reference horizon by immediate
+  speech.
+- One corpus and one head-mounted channel.
+- A crop-energy heuristic cannot distinguish low-energy speech from room tone.
+- Test-time artificial shifts do not reproduce the joint distribution of real onset
+  errors.
+- The confound stratification shows that the comparator advantage lives in recording-start
+  crops; it does not isolate the acoustic or channel property responsible.

@@ -34,6 +34,7 @@ class ArchitectureMetadata:
     trainable_parameters: int
     expected_trainable_parameters: int
     stages: tuple[str, ...]
+    implementation: tuple[str, ...] = ()
 
 
 def count_trainable_parameters(module: nn.Module) -> int:

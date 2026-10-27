@@ -156,7 +156,11 @@ def main() -> None:
     selected = _selected(args, matrix)
 
     if args.command == "status":
-        protocol = load_robustness_protocol(matrix.robustness_config_path)
+        protocol = (
+            None
+            if matrix.robustness_config_path is None
+            else load_robustness_protocol(matrix.robustness_config_path)
+        )
         statuses = [
             verify_job_completion(
                 job,

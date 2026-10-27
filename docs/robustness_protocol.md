@@ -1,157 +1,186 @@
-# Frozen robustness execution protocol
+# Frozen robustness protocol and evidence map
 
-`configs/robustness_v1.yaml` is a prospective protocol, not a menu from which to pick
-favorable test results. The robustness runner validates that both this file and its parent
-experiment are marked `frozen_before_test_evaluation` before it reads a checkpoint or test
-waveform.
+`configs/robustness_v1.yaml` is a prespecified protocol. It is not a menu from which
+favorable conditions may be selected. Its parent experiment and the robustness config
+must both be marked `frozen_before_test_evaluation`.
 
-## Two execution classes
+## Analysis families
 
-Input-definition ablations and test-time stress tests answer different questions and are kept
-in separate code paths.
+Input-definition ablations and test-time perturbations answer different questions and
+use separate execution paths.
 
-| Analysis family | Conditions | Checkpoint rule | Calibration and policy rule |
+| Family | Conditions | Checkpoint rule | Calibration/policy rule |
 |---|---:|---|---|
-| Condition-matched input ablation | 4 x 5 folds | The primary condition may reuse the parent checkpoint. Each of the other three conditions requires a newly trained checkpoint using its own onset detector and pre-roll. | Fit temperature on that condition's calibration partition and select the policy on that condition's policy-tuning partition. |
-| Evaluation-only perturbation | 11 x 5 folds | Reuse the primary `causal_noise_floor`, 30 ms pre-roll checkpoint. Retraining is forbidden. | Fit temperature once on the clean calibration partition and select `theta`/`epsilon` once on the clean policy-tuning partition. Apply those fixed values to every perturbed test condition. |
+| Condition-matched input definition | Four definitions × five folds | The primary adaptive/30 ms condition is the parent result. Zero pre-roll, fixed causal floor, and recovered offline peak each require newly trained checkpoints. | Fit a temperature and select `theta`/`epsilon` separately from that condition's validation partitions. |
+| Evaluation-only perturbation | Eleven conditions × five folds | Reuse the primary adaptive/30 ms checkpoint; retraining is forbidden. | Fit temperature once on clean calibration rows and select policy once on clean policy-tuning rows. Apply both unchanged to every perturbed test condition. |
 
-The four input conditions are the primary level-adaptive causal detector with 30 ms pre-roll, a
-zero-pre-roll ablation, the recovered noncausal peak-relative detector, and the fixed-threshold
-causal detector. The last is retained specifically so that the manuscript quantifies the
-onset-localisation failure documented in `docs/onset_finding.md` rather than only describing it.
+The 20 conceptual input-condition folds include five primary folds already counted in
+the parent experiment, so the robustness-specific retraining stage has 15 jobs. The
+test-time stage has 55 jobs. `run_robustness.py plan` therefore describes 75
+fold-condition entries, while `run_experiments.py` expands the complete study to 100
+jobs after also counting primary compact models, seed replications, and WavLM.
 
-The 11 test-time conditions are the clean reference, white noise at 20/10/0 dB SNR, and
-onset-anchor shifts of -50/-30/-10/0/+10/+30/+50 ms.
+## Condition-matched input definitions
 
-The plan records `requires_condition_matched_checkpoint`, `requires_new_training`,
-`execution_stage`, and `selection_source` for every fold-condition job. The test-time CLI rejects
-an input-ablation ID, and the retrained-ablation CLI rejects a test-time ID.
+1. `primary_causal_noise_floor_preroll30`: adaptive causal detector, 30 ms pre-roll;
+2. `causal_noise_floor_preroll0`: the same detector with no pre-roll;
+3. `causal_fixed_preroll30`: fixed threshold 0.003 with 30 ms pre-roll; and
+4. `offline_peak_preroll30`: whole-utterance peak-relative, noncausal alignment with
+   30 ms pre-roll.
 
-## Test-time perturbation definitions
+The last two quantify sensitivity to onset-definition choice. The offline rule cannot
+support a real-time claim because its threshold uses the complete waveform.
 
-White Gaussian noise is added after onset-aligned cropping and before the STFT. Its random stream
-is derived from SHA-256 of the primary seed, sample ID, and SNR, so row order, batch size, and
-worker count do not change the waveform. The sampled noise is centered to zero mean and scaled to
-the requested crop-level RMS SNR. An all-zero crop remains zero because a finite relative SNR is
-undefined; this is explicitly recorded as `noise_applied=false`. Synthetic white noise is only a
-stress test and is not evidence of cross-corpus or real far-field robustness.
+## Evaluation-only perturbations
 
-For onset sensitivity, `estimated_onset = primary_onset + offset`. The requested anchor is clipped
-to `[0, waveform_length]`; the crop is then boundary-padded to preserve the exact pre-roll plus
-post-onset input length. If the primary detector fails, the registered no-onset fallback remains at
-sample zero and no artificial shifted onset is invented. Both the reference onset and requested
-and clipped anchors are retained in the prefix ledger.
+The eleven conditions are:
 
-The zero-shift condition is independently recomputed. Its maximum absolute logit difference from
-the saved clean ledger is recorded as an informational numerical audit. It is not used to accept,
-reject, tune, or remove a condition, because hardware backends can introduce small floating-point
-differences.
+- clean reference;
+- zero-mean white Gaussian noise at 20, 10, and 0 dB crop-level RMS SNR; and
+- anchor shifts of −50, −30, −10, 0, +10, +30, and +50 ms.
 
-## Leakage controls
+### Noise definition
 
-For a test-time run, the only fitted quantities are:
+Noise is added after onset-aligned cropping and before STFT. Its random stream is a
+SHA-256 function of primary seed, sample ID, and SNR, so row order, batch size, and
+worker count do not change it. The sampled stream is centered and scaled to requested
+RMS SNR. An all-zero crop remains zero and records `noise_applied=false`, because finite
+relative SNR is undefined.
 
-1. scalar temperature from rows with `split_role=calibration`; and
-2. the complete-policy `theta` and `epsilon` from rows with
-   `split_role=policy_tuning`, using the frozen grid and macro-F1 constraint.
+White noise is a synthetic stress test. It is not an independent corpus, real far-field
+microphone, or mobile-channel experiment. A measured improvement under noise is a
+counterintuitive shift in the classifier's class bias/decision behavior, not evidence
+that noise improves dysarthric speech or a proven regularization mechanism.
 
-Perturbed test logits are generated only after those values are fixed. Every metrics row and the
-JSON summary record zero test rows used for fitting or selection. Conditions are emitted in frozen
-config order, not ranked or filtered by test performance.
+### Anchor-shift definition
 
-For a retrained input ablation, the standard evaluation pipeline enforces the same split boundary
-within each condition. The robustness wrapper additionally requires one ledger and one run summary
-per frozen fold, checks the exact condition-training-config hash, verifies the model/onset/pre-roll
-identity, and hashes every supplied checkpoint and ledger.
+`requested_anchor = primary_anchor + offset`. The requested anchor is clipped to the
+waveform boundary, and padding preserves exact pre-roll plus post-onset length. If the
+primary detector has no active run, the registered zero fallback remains and no
+artificial “true” onset is invented.
 
-## Commands
+The zero-shift condition is independently recomputed. Its maximum absolute logit
+difference from the clean saved ledger is recorded as an informational floating-point
+audit only; it is never used to tune, accept, or reject a condition.
 
-Validate and inspect the bounded 75-job plan without reading audio:
+Artificial offsets quantify sensitivity to anchor changes. They do not estimate the
+real detector's error distribution because no human reference onset is available.
+
+## Leakage and identity controls
+
+For each primary fold, the only fitted test-time quantities are derived from clean
+validation rows:
+
+1. scalar temperature from `split_role=calibration`; and
+2. complete-policy `theta`/`epsilon` from `split_role=policy_tuning`.
+
+Perturbed test logits are generated after those values are fixed. Every output records
+zero test rows used for temperature fitting or policy selection. Conditions are emitted
+in frozen config order and are neither ranked nor filtered by test performance.
+
+For each retrained condition, the standard evaluation pipeline enforces the same split
+boundary. The wrapper requires five ledgers and five run summaries, verifies condition
+config hash, model/onset/pre-roll identity, and out-of-fold coverage, and hashes all
+inputs.
+
+## Authoritative commands
+
+Inspect the robustness-only plan:
 
 ```bash
 .venv/bin/python scripts/run_robustness.py plan \
   --output-dir artifacts/robustness/plan
 ```
 
-Generate the three non-primary condition-matched configs. This command only writes configs and
-does not launch training:
+Inspect the complete frozen matrix and current completion state:
 
 ```bash
-.venv/bin/python scripts/run_robustness.py prepare-retraining \
-  --output-dir artifacts/robustness/retraining-configs
+.venv/bin/python scripts/run_experiments.py plan \
+  --output-dir artifacts/orchestration/plan
+
+.venv/bin/python scripts/run_experiments.py status
 ```
 
-Each generated config must then be passed explicitly to `scripts/run_fold.py` for every fold. For
-example:
+Execute only the robustness stages when their dependencies are present:
 
 ```bash
-.venv/bin/python scripts/run_fold.py \
-  --config artifacts/robustness/retraining-configs/causal_noise_floor_preroll0.yaml \
-  --fold 0 --model transformer --device auto
+.venv/bin/python scripts/run_experiments.py run \
+  --stage robustness_retrain \
+  --stage robustness_test_time \
+  --device auto \
+  --output-dir artifacts/orchestration/robustness-execution
 ```
 
-After all five condition-matched runs exist, verify their summaries and evaluate the ablation:
+If dependencies were produced at a verified earlier commit, use
+`--allow-dependency-commit-drift`; this bypasses only commit equality and records the
+drift. Do not use `--rerun-invalid` to overwrite a scientifically valid run merely
+because a later documentation commit changed.
 
-```bash
-.venv/bin/python scripts/run_robustness.py evaluate-retrained \
-  --analysis-id causal_noise_floor_preroll0 \
-  --prefix-ledger artifacts/runs/FOLD0/prefix_predictions.parquet \
-  --prefix-ledger artifacts/runs/FOLD1/prefix_predictions.parquet \
-  --prefix-ledger artifacts/runs/FOLD2/prefix_predictions.parquet \
-  --prefix-ledger artifacts/runs/FOLD3/prefix_predictions.parquet \
-  --prefix-ledger artifacts/runs/FOLD4/prefix_predictions.parquet \
-  --run-summary artifacts/runs/FOLD0/run_summary.json \
-  --run-summary artifacts/runs/FOLD1/run_summary.json \
-  --run-summary artifacts/runs/FOLD2/run_summary.json \
-  --run-summary artifacts/runs/FOLD3/run_summary.json \
-  --run-summary artifacts/runs/FOLD4/run_summary.json \
-  --output-dir artifacts/robustness/retrained/causal_noise_floor_preroll0
-```
+Low-level `run_robustness.py test-time`, `evaluate-retrained`, and
+`summarize-test-time` commands remain available for bounded diagnostics. Their inputs
+must be explicit; do not use placeholder `FOLD0` paths in a reproducibility record.
 
-Run all frozen test-time conditions for one primary fold:
+## Output map
 
-```bash
-.venv/bin/python scripts/run_robustness.py test-time \
-  --fold 0 \
-  --checkpoint artifacts/runs/PRIMARY_FOLD0/best_checkpoint.pt \
-  --reference-ledger artifacts/runs/PRIMARY_FOLD0/prefix_predictions.parquet \
-  --output-dir artifacts/robustness/test-time/fold0 \
-  --device auto
-```
+Test-time evidence:
 
-Repeat the last command for all five folds. `--analysis-id` may be repeated for bounded debugging,
-but the manuscript robustness table must include every prespecified condition.
+- per condition/fold: `artifacts/robustness/test-time/<analysis_id>/fold<k>/`
+- combined pooled and fold summaries: `artifacts/robustness/test-time/combined/`
 
-After all five complete test-time decision ledgers exist, compute pooled out-of-fold metrics and
-unweighted fold mean plus sample standard deviation as separate estimands:
+Each fold-condition directory contains calibrated prefix predictions, decision rows,
+fixed/adaptive metrics, clean validation policy identity, and a hash-bearing summary.
+The combined summarizer verifies exact out-of-fold coverage for every condition and
+policy and fits no parameters. `--allow-subset` is debugging-only and is forbidden for
+the final table.
 
-```bash
-.venv/bin/python scripts/run_robustness.py summarize-test-time \
-  --decision-ledger artifacts/robustness/test-time/fold0/robustness_decisions.parquet \
-  --decision-ledger artifacts/robustness/test-time/fold1/robustness_decisions.parquet \
-  --decision-ledger artifacts/robustness/test-time/fold2/robustness_decisions.parquet \
-  --decision-ledger artifacts/robustness/test-time/fold3/robustness_decisions.parquet \
-  --decision-ledger artifacts/robustness/test-time/fold4/robustness_decisions.parquet \
-  --output-dir artifacts/robustness/test-time/combined
-```
+Retrained evidence:
 
-The summarizer verifies exact out-of-fold coverage for every condition and policy and fits no
-parameters. `--allow-subset` is available only for debugging and must not be used for the final
-robustness table.
+- `artifacts/robustness/retrained/causal_noise_floor_preroll0/`
+- `artifacts/robustness/retrained/causal_fixed_preroll30/`
+- `artifacts/robustness/retrained/offline_peak_preroll30/`
+- paired pre-roll inference: `artifacts/robustness/retrained/pre_roll_comparison/`
 
-## Outputs and audit trail
+## Completed zero-pre-roll finding
 
-A test-time fold run writes:
+The condition-matched zero-pre-roll experiment does not support the old statement that
+30 ms pre-roll makes no material difference.
 
-- calibrated per-prefix logits/probabilities and perturbation metadata;
-- adaptive and fixed-duration per-sample decisions;
-- fold-condition metrics for the complete calibrated policy and 150/200/250/300 ms baselines;
-- the clean validation-only temperature fit and complete policy candidate grid; and
-- a JSON summary containing config, manifest, fold-manifest, checkpoint, reference-ledger, and
-  environment provenance.
+| Complete calibrated policy | Accuracy | Macro-F1 | Balanced accuracy | Mean decision time |
+|---|---:|---:|---:|---:|
+| 30 ms primary | 41.95% | 41.95% | 45.74% | 269.39 ms |
+| 0 ms retrained | 50.98% | 50.29% | 51.72% | 269.25 ms |
 
-Parquet is preferred; CSV is used when a Parquet engine is unavailable. Reports must identify
-fold-level and pooled out-of-fold estimands separately. The current primary ledger schema does not
-store its checkpoint hash, so test-time binding uses the run ID, frozen experiment-config hash,
-model-architecture hash, and the recorded zero-shift audit; the robustness output itself records
-the checkpoint hash.
+The paired speaker-cluster bootstrap estimate for zero minus 30 ms is +9.03 accuracy
+points (95% interval +0.10 to +19.79), +8.35 macro-F1 points (−0.38 to +19.95), and
++5.98 balanced-accuracy points (−1.62 to +15.23). Specificity rises while dysarthric
+recall falls, and fold differences are heterogeneous. The 30 ms condition remains the
+prespecified primary definition, but the revision must not claim that the pre-roll is
+beneficial or neutral.
+
+## Interpretation rules
+
+- Always report pooled OOF and unweighted fold mean ± sample SD separately.
+- Report complete calibrated policy and fixed prefixes from the same condition.
+- Keep calibration/policy selection condition-specific for retrained definitions.
+- State whether a result is condition-matched retraining or evaluation-only stress.
+- Treat additive-noise improvements, onset-shift changes, and pre-roll changes as
+  descriptive effects on this classifier/cohort.
+- Do not infer recording-noise cause, articulatory mechanism, or clinical benefit.
+- Do not use a non-significant interval as proof of equivalence.
+
+## Unavailable robustness evidence
+
+- no completed manual onset references or real onset-error bins;
+- no cross-corpus evaluation;
+- no real far-field/mobile microphone recordings;
+- no verified speaker-level neurological etiology; and
+- no human qualitative cause coding.
+
+A published speech-language-pathologist/Frenchay severity mapping is available for all
+eight dysarthric speakers (Joy, Umesh, and Abraham, 2017;
+<https://doi.org/10.21437/Interspeech.2017-878>). It can support descriptive
+severity-stratified dysarthric recall/error reporting, but it is constant within speaker
+and does not turn a robustness comparison into independent severity validation.
+
+These are declared limitations. They are not replaced by synthetic noise, artificial
+anchor shifts, or an empty annotation template.

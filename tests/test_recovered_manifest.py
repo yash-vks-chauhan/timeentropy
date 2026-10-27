@@ -37,3 +37,31 @@ def test_recovered_fold_counts_match_documented_values() -> None:
             selected = subset.loc[subset["role"].eq(role)]
             assert int(selected["label"].eq("control").sum()) == control
             assert int(selected["label"].eq("dysarthric").sum()) == dysarthric
+
+
+def test_manifest_channel_selection_is_not_hard_coded(tmp_path) -> None:
+    source = pd.DataFrame(
+        {
+            "sample_id": ["head", "array"],
+            "path": ["/tmp/head.wav", "/tmp/array.wav"],
+            "rel_path": ["S1/Session1/wav_headMic/a.wav", "S1/Session1/wav_arrayMic/a.wav"],
+            "speaker_id": ["S1", "S1"],
+            "gender": ["F", "F"],
+            "label": ["control", "control"],
+            "label_id": [0, 0],
+            "session": ["Session1", "Session1"],
+            "mic": ["headMic", "arrayMic"],
+            "utterance_id": ["a", "a"],
+            "prompt_text": ["hello", "hello"],
+            "usable_prompt": [True, True],
+            "duration_sec": [1.0, 1.0],
+            "sample_rate": [16_000, 44_100],
+            "num_frames": [16_000, 44_100],
+        }
+    )
+    source_path = tmp_path / "source.csv"
+    source.to_csv(source_path, index=False)
+
+    array = build_manifest(source_path, mic="arrayMic", expected_counts=None)
+    assert array["sample_id"].tolist() == ["array"]
+    assert array["mic"].tolist() == ["arrayMic"]

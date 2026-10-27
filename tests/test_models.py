@@ -6,7 +6,9 @@ import pytest
 import torch
 
 from timeentropy.models import (
+    CNNGRU,
     CNNBiLSTM,
+    EfficientNetLite0,
     ShortPrefixTransformer,
     SmallCNN,
     available_model_names,
@@ -40,6 +42,8 @@ def _mixed_length_batch(
     [
         (SmallCNN, 23_538),
         (CNNBiLSTM, 69_354),
+        (CNNGRU, 54_762),
+        (EfficientNetLite0, 3_372_994),
         (ShortPrefixTransformer, 196_594),
     ],
 )
@@ -53,7 +57,7 @@ def test_parameter_counts_match_frozen_architecture(model_type, expected_paramet
 
 
 @pytest.mark.parametrize("time_frames", [13, 18, 23, 28, 37])
-@pytest.mark.parametrize("model_type", [SmallCNN, CNNBiLSTM, ShortPrefixTransformer])
+@pytest.mark.parametrize("model_type", [SmallCNN, CNNBiLSTM, CNNGRU, ShortPrefixTransformer])
 def test_models_accept_multiple_prefix_lengths(model_type, time_frames: int) -> None:
     torch.manual_seed(17)
     model = model_type().eval()
@@ -67,6 +71,19 @@ def test_models_accept_multiple_prefix_lengths(model_type, time_frames: int) -> 
 @pytest.mark.parametrize("time_frames", [13, 28, 41])
 def test_cnn_bilstm_preserves_time_until_temporal_pooling(time_frames: int) -> None:
     model = CNNBiLSTM().eval()
+    values = torch.randn(2, 1, 257, time_frames)
+    with torch.inference_mode():
+        frame_features = model.extract_frame_features(values)
+        encoded = model.encode_sequence(values)
+        pooled = model.forward_features(values)
+    assert frame_features.shape == (2, time_frames, 48)
+    assert encoded.shape == (2, time_frames, 128)
+    assert pooled.shape == (2, 128)
+
+
+@pytest.mark.parametrize("time_frames", [13, 28, 41])
+def test_cnn_gru_preserves_time_until_temporal_pooling(time_frames: int) -> None:
+    model = CNNGRU().eval()
     values = torch.randn(2, 1, 257, time_frames)
     with torch.inference_mode():
         frame_features = model.extract_frame_features(values)
@@ -100,7 +117,7 @@ def test_small_cnn_documents_time_downsampling_before_global_pooling() -> None:
     assert pooled.shape == (2, 64)
 
 
-@pytest.mark.parametrize("model_type", [SmallCNN, CNNBiLSTM, ShortPrefixTransformer])
+@pytest.mark.parametrize("model_type", [SmallCNN, CNNBiLSTM, CNNGRU, ShortPrefixTransformer])
 def test_models_reject_wrong_frequency_dimension(model_type) -> None:
     model = model_type()
     with pytest.raises(ValueError, match="257 frequency bins"):
@@ -113,7 +130,7 @@ def test_small_cnn_rejects_time_axis_too_short_for_three_pools() -> None:
         model(torch.randn(2, 1, 257, 7))
 
 
-@pytest.mark.parametrize("model_type", [SmallCNN, CNNBiLSTM, ShortPrefixTransformer])
+@pytest.mark.parametrize("model_type", [SmallCNN, CNNBiLSTM, CNNGRU, ShortPrefixTransformer])
 def test_right_padding_does_not_change_eval_logits(model_type) -> None:
     torch.manual_seed(31)
     model = model_type().eval()
@@ -228,11 +245,15 @@ def test_model_factory_supports_canonical_names_and_manuscript_aliases() -> None
     assert available_model_names() == (
         "small_cnn",
         "cnn_bilstm",
+        "cnn_gru",
+        "efficientnet_lite0",
         "transformer",
         "wavlm_reference",
     )
     assert isinstance(create_model("small-cnn"), SmallCNN)
     assert isinstance(create_model("cnn-lstm"), CNNBiLSTM)
+    assert isinstance(create_model("cnn-gru"), CNNGRU)
+    assert isinstance(create_model("efficientnet-lite0"), EfficientNetLite0)
     assert isinstance(create_model("transformer"), ShortPrefixTransformer)
     with pytest.raises(ValueError, match="unknown model"):
         create_model("efficientnet")

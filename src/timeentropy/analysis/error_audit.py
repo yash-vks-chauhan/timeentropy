@@ -263,6 +263,8 @@ def enrich_error_decisions(
     selected_prefix = prefix_ledger[prefix_columns].rename(
         columns={
             "prefix_ms": "decision_time_ms",
+            "speaker_id": "prefix_speaker_id",
+            "fold": "prefix_fold",
             "label_id": "prefix_label_id",
             "onset_detected": "prefix_onset_detected",
         }
@@ -275,6 +277,15 @@ def enrich_error_decisions(
     )
     if enriched["calibrated_normalized_entropy"].isna().any():
         raise ValueError("At least one decision lacks a matching selected prefix")
+    for column in ("speaker_id", "fold"):
+        prefix_column = f"prefix_{column}"
+        if column in decision_ledger.columns:
+            if not enriched[column].astype(str).eq(enriched[prefix_column].astype(str)).all():
+                raise ValueError(
+                    f"Decision and prefix ledgers disagree on {column}"
+                )
+        else:
+            enriched[column] = enriched[prefix_column]
     if not np.array_equal(
         enriched["label_id"].to_numpy(dtype=np.int64),
         enriched["prefix_label_id"].to_numpy(dtype=np.int64),
@@ -282,7 +293,7 @@ def enrich_error_decisions(
         raise ValueError("Decision and prefix ledgers disagree on label_id")
     if not enriched["split_role"].eq("test").all():
         raise ValueError("Error audit accepts out-of-fold test decisions only")
-    enriched = enriched.drop(columns=["prefix_label_id"])
+    enriched = enriched.drop(columns=["prefix_speaker_id", "prefix_fold", "prefix_label_id"])
 
     manifest_columns = [
         column

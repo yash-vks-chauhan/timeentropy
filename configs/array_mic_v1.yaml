@@ -1,0 +1,131 @@
+# This configuration intentionally remains non-frozen until the licensed full
+# TORGO release has been indexed and its observed array-channel cohort recorded.
+# Do not replace the null counts by copying head-mic values.
+schema_version: 1
+status: "draft_pending_array_manifest"
+experiment_name: "reviewer_array_mic_v1"
+
+data:
+  recovered_index: "/path/to/full_torgo_index.csv"
+  manifest: "data/metadata/torgo_manifest_array_v1.csv"
+  fold_manifest: "data/metadata/torgo_folds_array_v1.csv"
+  raw_root: "data/raw/torgo"
+  selection:
+    mic: "arrayMic"
+    usable_prompt: true
+    min_duration_sec: 0.05
+  expected:
+    utterances: null
+    speakers: null
+    control: null
+    dysarthric: null
+
+audio:
+  sample_rate: 16000
+  mono: true
+
+onset:
+  primary_mode: "causal_noise_floor"
+  comparison_mode: "recovered_offline_peak"
+  secondary_mode: "causal_fixed"
+  frame_ms: 20
+  hop_ms: 10
+  absolute_rms_floor: 0.003
+  recovered_relative_db_below_peak: 35.0
+  causal_noise_reference_ms: 100
+  causal_snr_db: 15.0
+  consecutive_active_frames: 2
+  pre_roll_ms: 30
+  prefix_semantics: "post_onset_plus_preroll"
+  no_onset_policy: "record_detector_failure"
+
+features:
+  representation: "log_magnitude_stft"
+  n_fft: 512
+  window_ms: 25
+  hop_ms: 10
+  window: "periodic_hann"
+  center: false
+  normalization: "per_utterance_zscore"
+  normalization_floor: 1.0e-6
+
+prefixes:
+  warmup_ms: 150
+  eligible_ms: [200, 250, 300]
+  fallback_ms: 300
+  delta_ms: 50
+  training_ms: [150, 200, 250, 300]
+  shared_model_across_prefixes: true
+
+models:
+  primary_headline_model: "transformer"
+  primary: [transformer]
+  modern_reference: [wavlm_base_plus]
+  modern_reference_config:
+    model_id: "wavlm_base_plus"
+    checkpoint_id: "microsoft/wavlm-base-plus"
+    revision: "4c66d4806a428f2e922ccfa1a962776e232d487b"
+    input_representation: "raw_mono_waveform"
+    sample_rate: 16000
+    pooling: "masked_mean"
+    fine_tuning: "frozen_backbone"
+    unfreeze_top_n: 0
+    dropout: 0.30
+
+training:
+  primary_seed: 20260819
+  robustness_seeds: [20260820, 20260821]
+  optimizer: "adamw"
+  learning_rate: 0.00015
+  learning_rate_schedule: "constant"
+  weight_decay: 0.0005
+  batch_size: 64
+  max_epochs: 35
+  early_stopping_patience: 8
+  checkpoint_selection_metric: "speaker_balanced_macro_f1"
+  gradient_clip_norm: 5.0
+  dropout: 0.30
+  label_smoothing: 0.05
+  class_balance: "weighted_random_sampler"
+  prefix_sampling: "uniform"
+  augmentation:
+    gain_db: [-3.0, 3.0]
+    additive_noise_probability: 0.5
+    additive_noise_snr_db: [20.0, 35.0]
+    spectrogram_mask_probability: 0.5
+    frequency_mask_max_bins: 16
+    time_mask_max_frames: 4
+  validation_partition:
+    method: "sha256_sample_id"
+    checkpoint_fraction: 0.50
+    calibration_fraction: 0.25
+    policy_fraction: 0.25
+
+calibration:
+  method: "scalar_temperature"
+  fitting_split: "calibration"
+  objective: "negative_log_likelihood_all_prefixes"
+  ece_bins: 15
+
+decision_policy:
+  entropy_normalization_classes: 2
+  probability_clip: 1.0e-12
+  theta_grid: {start: 0.30, stop: 0.95, step: 0.05}
+  epsilon_grid: {start: 0.00, stop: 0.20, step: 0.02}
+  selection:
+    primary: "minimum_validation_latency"
+    constraint: "macro_f1_within_margin_of_fixed_300"
+    macro_f1_margin_absolute: 0.01
+    tie_breakers: ["higher_macro_f1", "lower_forced_fallback_rate", "lower_theta", "lower_epsilon"]
+  ablations: [fixed_300, entropy_only, entropy_class_stability, entropy_value_stability, full_policy, max_softmax_confidence]
+
+reporting:
+  primary_unit: "fold"
+  report_pooled_out_of_fold: true
+  report_per_speaker: true
+  confidence_level: 0.95
+  cluster_bootstrap_unit: "speaker"
+  bootstrap_replicates: 10000
+  distinguish_observation_and_compute_latency: true
+  canonical_prefix_ledger: "artifacts/ledgers/prefix_predictions.parquet"
+  canonical_decision_ledger: "artifacts/ledgers/decisions.parquet"

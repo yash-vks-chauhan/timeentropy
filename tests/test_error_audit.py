@@ -187,6 +187,24 @@ def test_links_calibrated_prefix_and_derives_prespecified_strata() -> None:
     )
 
 
+def test_decision_context_columns_are_verified_without_merge_suffixes() -> None:
+    prefix, decisions, manifest = _synthetic_inputs()
+    context = prefix[["run_id", "sample_id", "speaker_id", "fold"]].drop_duplicates()
+    decisions = decisions.merge(
+        context,
+        how="left",
+        on=["run_id", "sample_id"],
+        validate="one_to_one",
+    )
+
+    audit = audit_classification_errors(prefix, decisions, manifest, review_per_error=1)
+
+    assert {"speaker_id", "fold"}.issubset(audit.enriched_decisions.columns)
+    assert not {"speaker_id_x", "speaker_id_y", "fold_x", "fold_y"}.intersection(
+        audit.enriched_decisions.columns
+    )
+
+
 def test_review_selection_is_deterministic_blinded_and_has_blank_taxonomy() -> None:
     prefix, decisions, manifest = _synthetic_inputs()
     first = audit_classification_errors(prefix, decisions, manifest, review_per_error=1)

@@ -36,10 +36,16 @@ from another paper that used the same corpus.
    prompt subset, segment duration, prediction unit, and aggregation must precede
    any numerical comparison. Raw headline accuracies from incompatible protocols
    must not be ranked as if they measured the same estimand.
-7. A frozen WavLM Base+ head is a reasonable modern reference. It is not a
+7. A frozen WavLM Base+ **backbone with a trained linear head** is a reasonable
+   modern reference. It is not a
    reproduction of prior TORGO SSL studies: the strongest directly relevant
    peer-reviewed study used frozen wav2vec 2.0/HuBERT utterance embeddings, and
    selected the TORGO array recording rather than `headMic`.
+8. Speaker-level dysarthria severity is available from Joy, Umesh, and Abraham
+   (2017), who report speech-language-pathologist/Frenchay categories for all eight
+   TORGO dysarthric speakers. Severity can support a descriptive error/recall
+   stratification, but is confounded with speaker and is not an utterance-level severity
+   label. Verified speaker-level neurological etiology remains unavailable.
 
 ## 1. Early time-series classification and earliness
 
@@ -80,17 +86,16 @@ summary.
 
 ### Reporting implications for this study
 
-At minimum, report:
+The implemented reporting layer provides accuracy, macro-F1, dysarthric recall,
+specificity, dysarthric precision, balanced accuracy, confusion counts, mean/SD,
+median and p95 decision time, decision counts, fallback rate, fold, pooled OOF,
+per-speaker, calibration, and speaker-clustered interval tables. These quantities
+should be reported for fixed prefixes and the adaptive policy as space permits.
 
-- accuracy, macro-F1, sensitivity, specificity, and AUROC at every fixed prefix;
-- the same predictive metrics for the adaptive policy and the fixed-300-ms
-  comparator;
-- decision rate at 200, 250, and 300 ms and forced-fallback rate;
-- mean, median, interquartile range, and preferably an empirical CDF of
-  observation time;
-- results per fold, pooled out-of-fold results, and per-speaker results, with the
-  aggregation rule named;
-- compute latency separately from acoustic observation time.
+AUROC, latency IQR, and an empirical latency CDF were not implemented. They are
+reasonable extensions, but the revision must not list them as delivered analyses or
+silently reconstruct them from rounded manuscript tables. The underlying ledgers make
+future computation possible.
 
 The TEASER denominator is the complete time-series length. This study instead
 has a prospective 300 ms decision horizon. If a normalized number is useful,
@@ -220,6 +225,17 @@ a fact to silently harmonize. A paper must state the exact included speaker IDs.
 Likewise, “TORGO audio at 16 kHz” does not identify the microphone. For every
 experiment, report the selected file/channel convention explicitly.
 
+[Joy, Umesh, and Abraham (2017)](https://doi.org/10.21437/Interspeech.2017-878)
+report that a speech-language pathologist assessed TORGO dysarthria severity using
+overall clinical intelligibility and articulator motor function under the Frenchay
+assessment. Their Table 1 maps severe to F01, M01, M02, and M04;
+severe-moderate to M05; moderate to F03; and mild to F04 and M03. This mapping covers
+the eight dysarthric speakers in the rebuilt cohort. It supports descriptive
+severity-stratified dysarthric recall or false-negative rates, not an independent
+severity-prediction task: severity is constant within speaker, and two categories have
+one speaker while the mild category has two. The paper does not provide a neurological
+etiology mapping that should be imputed into this study.
+
 [Schu, Janbakhshi, and Kodrasi (2023)](https://doi.org/10.1109/ICASSP49357.2023.10095981)
 provide a particularly important validity warning. On phonetically matched
 TORGO and UA-Speech subsets, several classifiers performed as well or better
@@ -237,6 +253,12 @@ the following checks:
 It does not prove that every TORGO classifier is invalid, nor that this rebuild
 will share the same confound. It makes the proposed audits necessary.
 
+The reconstruction provides label-free onset-mode statistics, a no-active-run/onset
+status field, a condition-matched zero-pre-roll comparison, and quantitative error
+strata. It does **not** provide human-reference onset error, a separate SNR-proxy error
+stratum, or human cause coding. Those omissions must remain explicit limitations rather
+than being presented as completed versions of every check above.
+
 ## 5. Candidate comparison table: binary dysarthria detection
 
 The table deliberately preserves incompatible units and protocols. “Best” values
@@ -251,7 +273,7 @@ are descriptive within each paper, not a cross-paper ranking.
 | 2023 | [Schu et al.](https://doi.org/10.1109/ICASSP49357.2023.10095981), binary detection and confound audit | TORGO subset, 7 dysarthric + 7 controls, 62 matched utterances per speaker | NR | 500 ms with 250 ms shift for Mel methods; utterance/segment aggregation varies by method | Leave-one-speaker-out; 90/10 training-speaker train/validation; majority vote for held-out speaker | Yes | Handcrafted SVMs, CNN/SRL Mel models, frozen and partially fine-tuned wav2vec 2.0 | Speaker accuracy for SRL: speech `71.1 +/- 3.1`, non-speech `100.0 +/- 0.0`, complete `91.1 +/- 3.1` | Primary purpose is confound diagnosis; speaker-level vote over many observations, not one early utterance decision; non-speech performance warns against naive comparison |
 | 2024 | [Javanmardi et al.](https://doi.org/10.1016/j.specom.2024.103047), binary detection (plus separate severity task) | TORGO, 8 dysarthric + 7 control speakers; non-words, words, and sentences | **Array microphone**, 16 kHz | Complete variable-length utterance; exact duration NR | Leave-one-speaker-out; CNN reserves 10% of every training speaker's samples for validation | Yes | Frozen wav2vec 2.0 Base/Large and HuBERT layer embeddings, temporally averaged; SVM or CNN | HuBERT-24 + SVM: ACC `76.12%`, SE `.55`, SP `.81`, F1 `.57`, EER `.340`; HuBERT-25 + CNN ACC `75.12%` | Strong modern comparator, but different microphone, whole utterances, LOSO aggregation, prompt mixture, and no observation-time policy |
 | 2025 | [Xiong et al.](https://doi.org/10.21437/Interspeech.2025-567), binary detection with ASR multitask tuning | Private 200 h source; TORGO used only as cross-corpus test | NR | Whole raw waveform sample; duration NR | Source train/evaluation/test are speaker-disjoint; no TORGO target tuning | Yes relative to the source corpus; within-TORGO split N/A | Partially fine-tuned wav2vec 2.0; frozen CNN encoder, tuned Transformer; ASR-primary gradient-projection MTL | TORGO sample-level accuracy `74.18%` | Cross-corpus generalization, much larger private source data, and sample-level metric; not a within-TORGO fold comparison |
-| 2026 | **This rebuild, prospective protocol; no result yet** | TORGO LDC release subset, 8 dysarthric + 7 controls, `headMic` | **Head-mounted**, 16 kHz | 150/200/250/300 ms post-onset plus up to 30 ms historical pre-roll | Five predefined speaker-disjoint test folds; validation speakers further partitioned without test use | Yes | Shared-prefix STFT CNN/CNN-BiLSTM/Transformer; frozen WavLM Base+ reference | Pending rerun; historical numbers are not reproducible evidence | Short onset-aligned prefixes and policy metrics are a different estimand; results must be presented as newly generated, not recovered |
+| 2026 | **This reconstruction**, binary detection | TORGO LDC release subset, 8 dysarthric + 7 controls, `headMic` | **Head-mounted**, 16 kHz | 150/200/250/300 ms post-onset plus up to 30 ms historical pre-roll | Five predefined speaker-disjoint test folds; validation-speaker utterances partitioned without test use | Yes | Shared-prefix STFT CNN/CNN-BiLSTM/Transformer; frozen WavLM Base+ backbone + trained linear head | At fixed 300 ms, WavLM: ACC `59.29%`, macro-F1 `58.10%`, balanced ACC `59.18%`; compact-model balanced ACC `45.88–47.56%` | Newly generated reconstruction, not recovery of submitted results; one corpus/channel, short horizon, 15 speaker clusters, and WavLM balanced-accuracy interval includes chance; severity strata are nested in only 8 dysarthric speakers |
 
 ## 6. Short-segment and adjacent pathological-speech evidence
 
@@ -313,9 +335,10 @@ detection performance.
 
 Therefore the revision may call `microsoft/wavlm-base-plus` a **modern
 self-supervised reference**. It should not call it a previously established
-TORGO state of the art. Report checkpoint ID and immutable revision, frozen versus
-fine-tuned status, pooling, trainable and total parameter counts, and the exact
-raw-audio sample counts.
+TORGO state of the art. Report checkpoint ID and immutable revision, the frozen
+backbone/trained-head distinction, pooling, trainable and total parameter counts,
+and the exact raw-audio sample counts. WavLM runtime/FLOPs were not profiled in the
+reconstruction and must not be inferred from compact-model profiles.
 
 ## 8. Claim-to-source ledger
 
@@ -329,6 +352,7 @@ raw-audio sample counts.
 | [TEASER 2020](https://doi.org/10.1007/s10618-020-00690-z) | Accuracy and normalized earliness are separate objectives; repeated predictions can support reliable exit | Treating a harmonic mean as the only outcome; this paper's absolute millisecond semantics |
 | [Rudzicz et al. 2012](https://doi.org/10.1007/s10579-011-9145-0) | Original TORGO collection, tasks, participants analyzed, microphones, sample rates, and alignment | Which microphone or subset a later study used unless that study says so |
 | [LDC2012S02](https://doi.org/10.35111/cp5y-9z47) | Distributed-release scope, 8 dysarthric + 7 control speakers, waveform organization | Exact experimental inclusion or preprocessing in a paper |
+| [Joy et al. 2017](https://doi.org/10.21437/Interspeech.2017-878) | Speech-language-pathologist/Frenchay severity category for each of the 8 TORGO dysarthric speakers | Speaker etiology, utterance-level severity variation, or severity effects independent of speaker |
 | [Millet & Zeghidour 2019](https://doi.org/10.1109/ICASSP.2019.8682324) | Speaker-disjoint TORGO detection from 2.5 s padded recordings; learnable waveform frontend | Sub-second detection, adaptive latency, or array/headMic comparability |
 | [Hernandez et al. 2020](https://doi.org/10.21437/Interspeech.2020-2354) | Rhythm features improved its prompt-disjoint TORGO detector | Speaker-independent TORGO performance; comparison to the current fold protocol |
 | [Wang et al. 2021](https://doi.org/10.21437/Interspeech.2021-2139) | Cross-corpus DSD can be posed as unsupervised domain adaptation | Standard target-independent evaluation, because unlabelled TORGO target audio is used in training |
@@ -355,8 +379,8 @@ raw-audio sample counts.
 - “Prior TORGO results are contextualized rather than ranked because microphone,
   segment duration, speaker split, prompt subset, prediction unit, and aggregation
   differ.”
-- “A frozen WavLM Base+ classifier is included as a modern reference alongside
-  models trained from scratch.”
+- “A frozen WavLM Base+ backbone with a trained linear head is evaluated as a
+  modern reference alongside models trained from scratch.”
 
 ### Claims to avoid
 

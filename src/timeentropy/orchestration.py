@@ -22,6 +22,7 @@ import pandas as pd
 
 from timeentropy.config import PROJECT_ROOT, load_yaml, project_path
 from timeentropy.evaluation.ledger import validate_prefix_ledger
+from timeentropy.models import available_model_names
 from timeentropy.provenance import sha256_file, sha256_json
 from timeentropy.robustness.config import (
     RobustnessProtocol,
@@ -98,13 +99,13 @@ class RunMatrix:
     config_path: Path
     config_file_sha256: str
     config_content_sha256: str
-    robustness_config_path: Path
-    robustness_config_file_sha256: str
-    robustness_config_content_sha256: str
+    robustness_config_path: Path | None
+    robustness_config_file_sha256: str | None
+    robustness_config_content_sha256: str | None
     primary_seed: int
     robustness_seeds: tuple[int, ...]
     folds: tuple[int, ...]
-    primary_robustness_analysis_id: str
+    primary_robustness_analysis_id: str | None
     primary_robustness_run_ids: tuple[str, ...]
     jobs: tuple[ExperimentJob, ...]
     matrix_sha256: str
@@ -334,6 +335,63 @@ def build_run_matrix(
     resolved_config_path = _resolved(config_path)
     config = load_yaml(resolved_config_path)
     _require_frozen_config(config, name="Experiment config")
+    standalone_stft_only = config.get("orchestration", {}).get("mode") == "standalone_stft_only"
+    if standalone_stft_only:
+        folds = _fold_ids(config)
+        primary_models = tuple(str(value) for value in config["models"]["primary"])
+        supported_primary = set(available_model_names()) - {"wavlm_reference"}
+        if not primary_models or len(set(primary_models)) != len(primary_models):
+            raise ValueError("models.primary must contain unique model identifiers")
+        if not set(primary_models).issubset(supported_primary):
+            raise ValueError("Standalone matrix contains an unsupported STFT model")
+        if str(config["models"]["primary_headline_model"]) not in primary_models:
+            raise ValueError("Standalone headline model must be in models.primary")
+        primary_seed = int(config["training"]["primary_seed"])
+        resolved_output_root = _resolved(output_root)
+        jobs = [
+            _fold_job(
+                stage="primary_stft",
+                config=config,
+                config_path=resolved_config_path,
+                fold=fold,
+                model_id=model_id,
+                seed=primary_seed,
+                output_root=resolved_output_root,
+                python_executable=python_executable,
+                device=device,
+                num_workers=num_workers,
+                ssl_reference=False,
+                allow_wavlm_download=False,
+                wavlm_batch_size=None,
+            )
+            for model_id in primary_models
+            for fold in folds
+        ]
+        jobs.sort(key=lambda item: (item.model_id, item.fold))
+        record = {
+            "schema_version": 1,
+            "config_file_sha256": sha256_file(resolved_config_path),
+            "config_content_sha256": sha256_json(config),
+            "mode": "standalone_stft_only",
+            "primary_seed": primary_seed,
+            "folds": list(folds),
+            "jobs": [job.identity_record() for job in jobs],
+        }
+        return RunMatrix(
+            config_path=resolved_config_path,
+            config_file_sha256=record["config_file_sha256"],
+            config_content_sha256=record["config_content_sha256"],
+            robustness_config_path=None,
+            robustness_config_file_sha256=None,
+            robustness_config_content_sha256=None,
+            primary_seed=primary_seed,
+            robustness_seeds=(),
+            folds=folds,
+            primary_robustness_analysis_id=None,
+            primary_robustness_run_ids=(),
+            jobs=tuple(jobs),
+            matrix_sha256=sha256_json(record),
+        )
     protocol = load_robustness_protocol(robustness_config_path)
     if protocol.parent_config_path != resolved_config_path:
         raise ValueError("Robustness protocol does not reference the selected experiment config")
@@ -935,6 +993,7 @@ def _validate_manifest_and_audio(config: dict[str, Any]) -> tuple[PrerequisiteCh
         "label",
         "label_id",
         "path",
+        "mic",
         "sample_rate",
         "num_frames",
     }
@@ -953,20 +1012,23 @@ def _validate_manifest_and_audio(config: dict[str, Any]) -> tuple[PrerequisiteCh
         not missing
         and counts == expected_counts
         and not manifest["sample_id"].duplicated().any()
+        and manifest["mic"].astype(str).eq(str(config["data"]["selection"]["mic"])).all()
     )
     checks.append(
         _check(
             "manifest",
             manifest_ok,
             (
-                "Frozen manifest columns, uniqueness, and cohort counts are valid."
+                "Frozen manifest columns, microphone selection, uniqueness, and cohort counts are valid."
                 if manifest_ok
-                else "Frozen manifest columns, uniqueness, or cohort counts differ."
+                else "Frozen manifest columns, microphone selection, uniqueness, or cohort counts differ."
             ),
             path=str(manifest_path),
             missing_columns=missing,
             observed_counts=counts,
             expected_counts=expected_counts,
+            expected_mic=str(config["data"]["selection"]["mic"]),
+            observed_mics=sorted(manifest["mic"].dropna().astype(str).unique().tolist())
         )
     )
     if missing:
@@ -1062,6 +1124,8 @@ def _package_check(selected: Sequence[ExperimentJob]) -> PrerequisiteCheck:
     ]
     if any(job.stage == "wavlm_reference" for job in selected):
         distributions.extend(("torchaudio", "transformers"))
+    if any(job.model_id == "efficientnet_lite0" for job in selected):
+        distributions.append("timm")
     versions: dict[str, str | None] = {}
     for name in distributions:
         try:
@@ -1149,7 +1213,11 @@ def run_preflight(
         raise ValueError("min_free_gib must be non-negative")
     config = load_yaml(matrix.config_path)
     _require_frozen_config(config, name="Experiment config")
-    protocol = load_robustness_protocol(matrix.robustness_config_path)
+    protocol = (
+        None
+        if matrix.robustness_config_path is None
+        else load_robustness_protocol(matrix.robustness_config_path)
+    )
     checks: list[PrerequisiteCheck] = [
         _check(
             "run_matrix",
@@ -1169,11 +1237,17 @@ def run_preflight(
             (
                 sha256_file(matrix.config_path) == matrix.config_file_sha256
                 and sha256_json(config) == matrix.config_content_sha256
-                and sha256_file(matrix.robustness_config_path)
-                == matrix.robustness_config_file_sha256
-                and protocol.config_sha256 == matrix.robustness_config_content_sha256
+                and (
+                    matrix.robustness_config_path is None
+                    or (
+                        sha256_file(matrix.robustness_config_path)
+                        == matrix.robustness_config_file_sha256
+                        and protocol is not None
+                        and protocol.config_sha256 == matrix.robustness_config_content_sha256
+                    )
+                )
             ),
-            "Frozen experiment and robustness configs match the planned hashes.",
+            "Frozen configuration hashes match the planned matrix.",
         ),
     ]
     git_check, commit = _git_state(git_policy)
@@ -1218,6 +1292,8 @@ def materialize_retraining_configs(
     roots = {job.config_path.parent for job in retraining_jobs}
     if len(roots) != 1:
         raise ValueError("Selected retraining jobs do not share one derived-config root")
+    if matrix.robustness_config_path is None:
+        raise RuntimeError("Standalone STFT matrices do not have retraining configurations")
     protocol = load_robustness_protocol(matrix.robustness_config_path)
     paths = write_retraining_configs(protocol, next(iter(roots)))
     for job in retraining_jobs:
@@ -1311,7 +1387,11 @@ def dependency_errors(
 
     selected_ids = {job.run_id for job in selected}
     lookup = {job.run_id: job for job in matrix.jobs}
-    protocol = load_robustness_protocol(matrix.robustness_config_path)
+    protocol = (
+        None
+        if matrix.robustness_config_path is None
+        else load_robustness_protocol(matrix.robustness_config_path)
+    )
     dependency_commit = None if allow_commit_drift else expected_git_commit
     errors: list[str] = []
     for job in selected:
@@ -1343,7 +1423,11 @@ def execute_jobs(
     """Run selected jobs one at a time and verify every completed artifact set."""
 
     materialize_retraining_configs(matrix, selected)
-    protocol = load_robustness_protocol(matrix.robustness_config_path)
+    protocol = (
+        None
+        if matrix.robustness_config_path is None
+        else load_robustness_protocol(matrix.robustness_config_path)
+    )
     statuses: list[CompletionStatus] = []
     for job in selected:
         before = verify_job_completion(
@@ -1389,11 +1473,15 @@ def plan_record(
             "file_sha256": matrix.config_file_sha256,
             "content_sha256": matrix.config_content_sha256,
         },
-        "robustness_config": {
-            "path": _portable_path(matrix.robustness_config_path),
-            "file_sha256": matrix.robustness_config_file_sha256,
-            "content_sha256": matrix.robustness_config_content_sha256,
-        },
+        "robustness_config": (
+            None
+            if matrix.robustness_config_path is None
+            else {
+                "path": _portable_path(matrix.robustness_config_path),
+                "file_sha256": matrix.robustness_config_file_sha256,
+                "content_sha256": matrix.robustness_config_content_sha256,
+            }
+        ),
         "folds": list(matrix.folds),
         "primary_seed": matrix.primary_seed,
         "robustness_seeds": list(matrix.robustness_seeds),
